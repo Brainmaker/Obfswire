@@ -1,19 +1,16 @@
-use rand::{
-    Rng, SeedableRng,
-    rngs::StdRng,
-};
+use rand::{rngs::StdRng, Rng, SeedableRng};
+
 use crate::{
-    REPLAY_CACHE,
     config::{Config, EndpointType, PadOption},
     crypto::{InitCipher, InitKey, SessionCipher, SessionKey, SharedKey},
     error::{BadDataReceived, Error, PeerMisbehaved},
     replay_cache::{current_timestamp_with_granularity, TIME_TORLERANCE},
     specification::{
-        BODY_MAX_LEN, BODY_MIN_LEN, FRAME_MAX_LEN, FRAME_MIN_LEN, HDR_LEN,
-        INIT_BODY_MAX_LEN, INIT_BODY_MIN_LEN, INIT_HDR_LEN, PAYLOAD_MIN_LEN,
-        INIT_PAYLOAD_MAX_LEN, INIT_PAYLOAD_MIN_LEN, INIT_SALT_LEN, INIT_TAG_LEN,
-        TAG_LEN,
+        BODY_MAX_LEN, BODY_MIN_LEN, FRAME_MAX_LEN, FRAME_MIN_LEN, HDR_LEN, INIT_BODY_MAX_LEN,
+        INIT_BODY_MIN_LEN, INIT_HDR_LEN, INIT_PAYLOAD_MAX_LEN, INIT_PAYLOAD_MIN_LEN, INIT_SALT_LEN,
+        INIT_TAG_LEN, PAYLOAD_MIN_LEN, TAG_LEN,
     },
+    REPLAY_CACHE,
 };
 
 #[derive(Debug)]
@@ -47,7 +44,8 @@ impl InitFrameDecoder {
 
         // Derive the initialization key using the received salt and `shared_key`.
         let salt: [u8; 32] = buf[0..32].try_into().unwrap();
-        self.cipher.set_init_key(InitKey::derive(&self.shared_key, &salt));
+        self.cipher
+            .set_init_key(InitKey::derive(&self.shared_key, &salt));
 
         // Open initialization frame header
         if self.cipher.open(&mut buf[INIT_SALT_LEN..]).is_err() {
@@ -87,8 +85,9 @@ impl InitFrameDecoder {
         let now = current_timestamp_with_granularity();
         if now.abs_diff(timestamp) > TIME_TORLERANCE {
             return Err(BadDataReceived::ExpiredTimestamp {
-                received_timestamp: timestamp
-            }.into());
+                received_timestamp: timestamp,
+            }
+            .into());
         }
 
         match self.endpoint_type {
@@ -98,7 +97,8 @@ impl InitFrameDecoder {
                 if stream_id != self.stream_id {
                     return Err(BadDataReceived::UnmatchedClientStreamId {
                         received: stream_id,
-                    }.into());
+                    }
+                    .into());
                 }
             }
             EndpointType::Server => {
@@ -114,16 +114,18 @@ impl InitFrameDecoder {
         let body_len = u16::from_be_bytes(buf[66..68].try_into().unwrap()) as usize;
         if !(INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN).contains(&body_len) {
             return Err(PeerMisbehaved::InitFrameBodyLenInvalid {
-                received: body_len as u16
-            }.into());
+                received: body_len as u16,
+            }
+            .into());
         }
 
         // Check the length of the initial frame payload (if any).
         let payload_len = u16::from_be_bytes(buf[68..70].try_into().unwrap()) as usize;
-        if !(INIT_PAYLOAD_MIN_LEN..=(body_len-INIT_TAG_LEN)).contains(&payload_len) {
+        if !(INIT_PAYLOAD_MIN_LEN..=(body_len - INIT_TAG_LEN)).contains(&payload_len) {
             return Err(PeerMisbehaved::InitPayloadLenInvalid {
-                received: payload_len as u16
-            }.into());
+                received: payload_len as u16,
+            }
+            .into());
         }
 
         Ok(InitHeader {
@@ -137,7 +139,7 @@ impl InitFrameDecoder {
     pub(crate) fn open_body(&mut self, buf: &mut [u8]) -> Result<(), Error> {
         debug_assert!((INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN).contains(&buf.len()));
         if self.cipher.open(buf).is_err() {
-            return Err(BadDataReceived::InitFrameBodyFailed.into())
+            return Err(BadDataReceived::InitFrameBodyFailed.into());
         }
         Ok(())
     }
@@ -173,7 +175,8 @@ impl InitFrameEncoder {
 
     pub(crate) fn seal(&mut self, buf: &mut InitFrameBufMut) -> SessionKey {
         let salt: [u8; 32] = self.rng.random();
-        self.cipher.set_init_key(InitKey::derive(&self.shared_key, &salt));
+        self.cipher
+            .set_init_key(InitKey::derive(&self.shared_key, &salt));
 
         let direction = match self.endpoint_type {
             EndpointType::Client => Direction::ClientToServer,
@@ -190,7 +193,8 @@ impl InitFrameEncoder {
         buf.header_mut()[48] = 0x00;
         buf.header_mut()[49] = direction.into();
         buf.header_mut()[50..58].copy_from_slice(&self.stream_id.to_be_bytes());
-        buf.header_mut()[58..66].copy_from_slice(&current_timestamp_with_granularity().to_be_bytes());
+        buf.header_mut()[58..66]
+            .copy_from_slice(&current_timestamp_with_granularity().to_be_bytes());
         buf.header_mut()[66..68].copy_from_slice(&(body_len as u16).to_be_bytes());
         buf.header_mut()[68..70].copy_from_slice(&(payload_len as u16).to_be_bytes());
         self.cipher.seal(&mut buf.header_mut()[INIT_SALT_LEN..]);
@@ -224,10 +228,12 @@ impl FrameDecoder {
     pub(crate) fn update_key_by_material(&mut self, key_material: [u8; 32]) {
         match self.endpoint_type {
             EndpointType::Client => {
-                self.cipher.update_session_key(key_material, b"server_to_client");
+                self.cipher
+                    .update_session_key(key_material, b"server_to_client");
             }
             EndpointType::Server => {
-                self.cipher.update_session_key(key_material, b"client_to_server");
+                self.cipher
+                    .update_session_key(key_material, b"client_to_server");
             }
             EndpointType::Undetermined => {
                 unreachable!("programming error: EndpointType is not initialized")
@@ -245,28 +251,32 @@ impl FrameDecoder {
 
         // Check whether the command field is valid.
         let Ok(command) = Command::try_from(buf[16]) else {
-            return Err(PeerMisbehaved::InvalidCommand {
-                received: buf[0]
-            }.into());
+            return Err(PeerMisbehaved::InvalidCommand { received: buf[0] }.into());
         };
 
         // Check the length of the frame body.
         let body_len = u16::from_be_bytes(buf[17..19].try_into().unwrap()) as usize;
         if !(BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len) {
             return Err(PeerMisbehaved::FrameBodyLenInvalid {
-                received: body_len as u16
-            }.into());
+                received: body_len as u16,
+            }
+            .into());
         }
 
         // Check the length of the frame payload (if any).
         let payload_len = u16::from_be_bytes(buf[19..21].try_into().unwrap()) as usize;
-        if !(PAYLOAD_MIN_LEN..=body_len-TAG_LEN).contains(&payload_len) {
+        if !(PAYLOAD_MIN_LEN..=body_len - TAG_LEN).contains(&payload_len) {
             return Err(PeerMisbehaved::PayloadLenInvalid {
-                received: payload_len as u16
-            }.into());
+                received: payload_len as u16,
+            }
+            .into());
         }
 
-        Ok(Header { command, body_len, payload_len })
+        Ok(Header {
+            command,
+            body_len,
+            payload_len,
+        })
     }
 
     pub(crate) fn open_body(&mut self, buf: &mut [u8]) -> Result<(), Error> {
@@ -303,10 +313,12 @@ impl FrameEncoder {
     pub(crate) fn update_key_by_material(&mut self, key_material: [u8; 32]) {
         match self.endpoint_type {
             EndpointType::Client => {
-                self.cipher.update_session_key(key_material, b"client_to_server");
+                self.cipher
+                    .update_session_key(key_material, b"client_to_server");
             }
             EndpointType::Server => {
-                self.cipher.update_session_key(key_material, b"server_to_client");
+                self.cipher
+                    .update_session_key(key_material, b"server_to_client");
             }
             EndpointType::Undetermined => {
                 unreachable!("programming error: EndpointType is not initialized")
@@ -404,8 +416,8 @@ pub(crate) struct InitFrameBufMut {
 
 impl InitFrameBufMut {
     pub(crate) fn with_random(random: [u8; 32]) -> Self {
-        let random_len = StdRng::from_seed(random)
-            .random_range(INIT_PAYLOAD_MIN_LEN..=INIT_PAYLOAD_MAX_LEN);
+        let random_len =
+            StdRng::from_seed(random).random_range(INIT_PAYLOAD_MIN_LEN..=INIT_PAYLOAD_MAX_LEN);
         Self {
             buf: vec![0u8; INIT_HDR_LEN + INIT_TAG_LEN],
             payload_pos: INIT_HDR_LEN + INIT_TAG_LEN,
@@ -482,7 +494,7 @@ impl FrameBufMut {
                 // final packet length appears uniformly distributed.
                 PadOption::UniformTail { link_mpu } => {
                     (FRAME_MAX_LEN / link_mpu as usize - 1) * link_mpu as usize
-                },
+                }
             },
             rng,
             pad_option,
@@ -523,7 +535,7 @@ impl FrameBufMut {
 
     pub(crate) fn pad(&mut self) {
         match self.pad_option {
-            PadOption::None => (),  // do nothing.
+            PadOption::None => (), // do nothing.
             PadOption::UniformTail { link_mpu } => {
                 debug_assert!(self.buf.len() <= self.capacity);
 
@@ -546,7 +558,7 @@ impl FrameBufMut {
                     // If the desired length is less than the current payload
                     // length, advance by one MPU length.
                     let p = sample_len + link_mpu as usize - last_packet_len;
-                    debug_assert!((FRAME_MIN_LEN+1..=(link_mpu as usize - 1)).contains(&p));
+                    debug_assert!((FRAME_MIN_LEN + 1..=(link_mpu as usize - 1)).contains(&p));
                     p
                 };
 
@@ -563,14 +575,14 @@ impl FrameBufMut {
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::{
-        config::{PadOption, EndpointType},
+        config::{EndpointType, PadOption},
         specification::{
-            INIT_FRAME_MIN_LEN, INIT_FRAME_MAX_LEN, INIT_PAYLOAD_MIN_LEN,
-            PAYLOAD_MIN_LEN, PAYLOAD_MAX_LEN,
+            INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_PAYLOAD_MIN_LEN, PAYLOAD_MAX_LEN,
+            PAYLOAD_MIN_LEN,
         },
     };
-    use super::*;
 
     #[test]
     fn test_initial_frame_client_encode_server_decode() {
@@ -583,7 +595,7 @@ mod test {
                 cipher_kind: Default::default(),
                 pad_option: PadOption::None,
             },
-            StdRng::from_seed([0u8; 32])
+            StdRng::from_seed([0u8; 32]),
         );
         encoder.init_endpoint_type(EndpointType::Client);
         let mut decoder = InitFrameDecoder::with_config(&Config {
@@ -615,7 +627,7 @@ mod test {
             assert_eq!(payload_len, remaining);
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[INIT_TAG_LEN..INIT_TAG_LEN+payload_len]
+                &body[INIT_TAG_LEN..INIT_TAG_LEN + payload_len]
             );
         }
     }
@@ -631,7 +643,7 @@ mod test {
                 cipher_kind: Default::default(),
                 pad_option: PadOption::None,
             },
-            StdRng::from_seed([0u8; 32])
+            StdRng::from_seed([0u8; 32]),
         );
         encoder.init_endpoint_type(EndpointType::Server);
         let mut decoder = InitFrameDecoder::with_config(&Config {
@@ -663,7 +675,7 @@ mod test {
             assert_eq!(payload_len, remaining);
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[INIT_TAG_LEN..INIT_TAG_LEN+payload_len]
+                &body[INIT_TAG_LEN..INIT_TAG_LEN + payload_len]
             );
         }
     }
@@ -684,10 +696,8 @@ mod test {
         encoder.init_endpoint_type(EndpointType::Client);
         decoder.init_endpoint_type(EndpointType::Server);
 
-        let mut buf = FrameBufMut::with_pad_option_and_rng(
-            PadOption::None,
-            StdRng::from_seed([0u8; 32])
-        );
+        let mut buf =
+            FrameBufMut::with_pad_option_and_rng(PadOption::None, StdRng::from_seed([0u8; 32]));
         for _ in 0..N_TESTS {
             buf.reset();
             let remaining = buf.remaining();
@@ -700,7 +710,7 @@ mod test {
             let Header {
                 command,
                 body_len,
-                payload_len
+                payload_len,
             } = decoder.open_header(hdr).unwrap();
             decoder.open_body(body).unwrap();
 
@@ -709,7 +719,7 @@ mod test {
             assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[TAG_LEN..TAG_LEN+payload_len]
+                &body[TAG_LEN..TAG_LEN + payload_len]
             );
         }
     }
@@ -747,7 +757,7 @@ mod test {
                 let Header {
                     command,
                     body_len,
-                    payload_len
+                    payload_len,
                 } = decoder.open_header(hdr).unwrap();
                 decoder.open_body(body).unwrap();
 
@@ -756,11 +766,10 @@ mod test {
                 assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
                 assert_eq!(
                     &dummy_payload[..remaining],
-                    &body[TAG_LEN..TAG_LEN+payload_len]
+                    &body[TAG_LEN..TAG_LEN + payload_len]
                 );
             }
         }
-
     }
 
     #[test]
@@ -785,10 +794,8 @@ mod test {
         const N_TESTS: usize = 63336 * 10;
         let dummy_payload = vec![0u8; FRAME_MAX_LEN];
 
-        let mut buf = FrameBufMut::with_pad_option_and_rng(
-            PadOption::None,
-            StdRng::from_seed([0u8; 32]),
-        );
+        let mut buf =
+            FrameBufMut::with_pad_option_and_rng(PadOption::None, StdRng::from_seed([0u8; 32]));
         for _ in 0..N_TESTS {
             buf.reset();
             let remaining = buf.remaining();

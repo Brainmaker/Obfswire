@@ -1,28 +1,29 @@
 use core::{
     pin::Pin,
-    task::{Context, Poll, ready},
+    task::{ready, Context, Poll},
 };
 use std::{
     io::{ErrorKind, Read, Write},
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
+
 use pin_project_lite::pin_project;
 use rand::{
-    Rng, SeedableRng, TryRngCore,
     rngs::{OsRng, StdRng},
+    Rng, SeedableRng, TryRngCore,
 };
 use tokio::{
-    spawn,
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    time::{Duration, sleep},
+    spawn,
+    time::{sleep, Duration},
 };
 
 use crate::{
     config::Config,
-    error::{Error, BadDataReceived},
+    error::{BadDataReceived, Error},
     state_machine::Obfuscator,
 };
 
@@ -31,7 +32,7 @@ pin_project! {
     ///
     /// [`ObfuscatedStream`] implements the [`AsyncRead`] and [`AsyncWrite`] traits,
     /// allowing it to be used similarly to a [`TcpStream`].
-    /// 
+    ///
     /// [`TcpStream`]: tokio::net::TcpStream
     #[derive(Debug)]
     pub struct ObfuscatedStream<IO> {
@@ -80,22 +81,24 @@ enum WriteState {
     Write { written: usize },
 }
 
-impl <IO> ObfuscatedStream<IO> {
+impl<IO> ObfuscatedStream<IO> {
     /// Creates a new [`ObfuscatedStream`] instance from the underlying `stream`
     /// and the given `config`.
     ///
-    /// For details on constructing and configuring `config`, refer to 
+    /// For details on constructing and configuring `config`, refer to
     /// the [`config`] module.
     ///
     /// [`config`]: crate::config
     pub fn with_config_in(config: Config, stream: IO) -> Self {
         let mut random = [0u8; 144];
-        OsRng.try_fill_bytes(&mut random).expect("system random source failure");
+        OsRng
+            .try_fill_bytes(&mut random)
+            .expect("system random source failure");
         Self::with_config_and_random_in(config, random, stream)
     }
 
-    /// Creates a new [`ObfuscatedStream`] instance from the underlying `stream`, 
-    /// the given `config` and a 144-byte cryptographically secure random number 
+    /// Creates a new [`ObfuscatedStream`] instance from the underlying `stream`,
+    /// the given `config` and a 144-byte cryptographically secure random number
     /// `random`.
     ///
     /// **Warning**: The `random` parameter must be sourced from a
@@ -103,7 +106,7 @@ impl <IO> ObfuscatedStream<IO> {
     /// Failure to do so may compromise the security provided by the `ObfuscatedStream`.
     /// For general use cases, the `with_config_in` method is recommended.
     ///
-    /// For details on constructing and configuring `config`, refer to 
+    /// For details on constructing and configuring `config`, refer to
     /// the [`config`] module.
     ///
     /// [`config`]: crate::config
@@ -113,8 +116,8 @@ impl <IO> ObfuscatedStream<IO> {
             read_state: ReadState::Read,
             write_state: WriteState::WaitData,
             obfuscator: Obfuscator::with_config_and_random(
-                config, 
-                random[..136].try_into().unwrap()
+                config,
+                random[..136].try_into().unwrap(),
             ),
             detected_error: None,
             max_delay_before_shutdown_in_millis: 5000,
@@ -122,14 +125,14 @@ impl <IO> ObfuscatedStream<IO> {
             rng: {
                 let seed = u64::from_le_bytes(random[136..].try_into().unwrap());
                 StdRng::seed_from_u64(seed)
-            }
+            },
         }
     }
-    
-    /// Sets the maximum delay before closing the connection after an error 
+
+    /// Sets the maximum delay before closing the connection after an error
     /// is detected, in milliseconds. The default is 5000 milliseconds.
     ///
-    /// The delay before shutdown is sampled from a uniform distribution within 
+    /// The delay before shutdown is sampled from a uniform distribution within
     /// the range `[0, delay_in_millis]`.
     pub fn set_max_delay_before_shutdown(&mut self, delay_in_millis: u64) {
         self.max_delay_before_shutdown_in_millis = delay_in_millis;
@@ -144,7 +147,7 @@ impl <IO> ObfuscatedStream<IO> {
     pub fn inner_stream_mut(&mut self) -> &mut IO {
         &mut self.stream
     }
-    
+
     /// Immediately updates the session keys using the provided key material.
     ///
     /// This function performs the same operation as [`Obfuscator::update_key`].
@@ -155,8 +158,8 @@ impl <IO> ObfuscatedStream<IO> {
 
     /// Sends a key update notification to the peer and updates the session key
     /// after the notification is sent.
-    /// 
-    /// This function performs the same operation as 
+    ///
+    /// This function performs the same operation as
     /// [`Obfuscator::update_key_with_notif`].
     /// For more details, refer to the documentation of that function.
     pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) {
@@ -171,7 +174,7 @@ where
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>
+        buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
         if self.is_shutdown.load(Ordering::Acquire) {
             if let Some(e) = &self.detected_error {
@@ -182,34 +185,35 @@ where
         loop {
             match *me.read_state {
                 ReadState::Read => {
-                    let mut reader = SyncReadAdapter { io: &mut me.stream, cx };
+                    let mut reader = SyncReadAdapter {
+                        io: &mut me.stream,
+                        cx,
+                    };
                     match me.obfuscator.read_wire(&mut reader) {
                         // normal read, continue to read data.
                         Ok(n) if n > 0 => {
-                            
                             // Has entered decoy mode
                             if let Some(e) = me.detected_error {
                                 return Poll::Ready(Err(e.clone().into()));
                             }
                             *me.read_state = ReadState::WaitData;
-                        },
+                        }
 
                         // reached EOF.
                         Ok(_) => {
                             return Poll::Ready(Ok(()));
-                        },
+                        }
 
                         // pending, wait for more data.
                         Err(e) if e.kind() == ErrorKind::WouldBlock => {
                             return Poll::Pending;
-                        },
+                        }
 
                         // Data corruption, close connection after random delay.
                         // (while reading random amounts of bytes)
                         Err(e) if e.kind() == ErrorKind::Other => {
                             match e.get_ref().and_then(|e| e.downcast_ref::<Error>()) {
                                 Some(Error::BadDataReceived(reason)) => {
-
                                     // After the obfuscator returns `BadDataReceived`,
                                     // it will not return the same value again.
                                     // But for the sake of robustness, we still
@@ -234,12 +238,10 @@ where
                                 }
                                 _ => return Poll::Ready(Err(e)),
                             }
-                        },
+                        }
 
                         // general I/O error.
-                        Err(e) => {
-                            return Poll::Ready(Err(e))
-                        },
+                        Err(e) => return Poll::Ready(Err(e)),
                     };
                 }
                 ReadState::WaitData => {
@@ -250,11 +252,11 @@ where
                             Poll::Ready(Ok(()))
                         }
                         Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                            *me.read_state = ReadState::Read;  // try to read again.
+                            *me.read_state = ReadState::Read; // try to read again.
                             continue;
                         }
                         Err(e) => return Poll::Ready(Err(e)),
-                    }
+                    };
                 }
             }
         }
@@ -268,23 +270,24 @@ where
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &[u8]
+        buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
         let mut me = self.project();
         loop {
             match me.write_state {
-                WriteState::WaitData => {
-                    match me.obfuscator.writer().write(buf) {
-                        Ok(written) => {
-                            *me.write_state = WriteState::Write { written };
-                        }
-                        Err(e) => {
-                            return Poll::Ready(Err(e));
-                        }
+                WriteState::WaitData => match me.obfuscator.writer().write(buf) {
+                    Ok(written) => {
+                        *me.write_state = WriteState::Write { written };
                     }
-                }
+                    Err(e) => {
+                        return Poll::Ready(Err(e));
+                    }
+                },
                 WriteState::Write { written } => {
-                    let mut writer = SyncWriteAdapter { io: &mut me.stream, cx };
+                    let mut writer = SyncWriteAdapter {
+                        io: &mut me.stream,
+                        cx,
+                    };
                     return match me.obfuscator.write_wire(&mut writer) {
                         // normal write, continue to write data.
                         Ok(_n) => {
@@ -294,34 +297,30 @@ where
                         }
 
                         // pending, wait for I/O.
-                        Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                            Poll::Pending
-                        }
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => Poll::Pending,
 
                         // I/O error from the writer.
-                        Err(e) => {
-                            Poll::Ready(Err(e))
-                        }
-                    }
+                        Err(e) => Poll::Ready(Err(e)),
+                    };
                 }
             }
         }
     }
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         let mut me = self.project();
         match me.write_state {
             WriteState::WaitData => Poll::Ready(Ok(())),
-            WriteState::Write { .. }=> {
-                let mut writer = SyncWriteAdapter { io: &mut me.stream, cx };
+            WriteState::Write { .. } => {
+                let mut writer = SyncWriteAdapter {
+                    io: &mut me.stream,
+                    cx,
+                };
                 match me.obfuscator.write_wire(&mut writer) {
                     Ok(n) => n,
                     Err(e) if e.kind() == ErrorKind::WouldBlock => {
                         return Poll::Pending;
-                    },
+                    }
                     Err(e) => return Poll::Ready(Err(e)),
                 };
                 *me.write_state = WriteState::WaitData;
@@ -332,7 +331,7 @@ where
 
     fn poll_shutdown(
         mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>
+        cx: &mut Context<'_>,
     ) -> Poll<Result<(), std::io::Error>> {
         ready!(self.as_mut().poll_flush(cx))?;
         Pin::new(&mut self.stream).poll_shutdown(cx)
@@ -343,8 +342,8 @@ where
 /// associated [`Context`].
 ///
 /// Turns `Poll::Pending` into `WouldBlock`.
-/// 
-/// The credit goes to the [futures-rustls](https://github.com/rustls/futures-rustls) 
+///
+/// The credit goes to the [futures-rustls](https://github.com/rustls/futures-rustls)
 /// project for this adapter.
 struct SyncReadAdapter<'a, 'b, T> {
     pub io: &'a mut T,
@@ -367,7 +366,7 @@ impl<T: AsyncRead + Unpin> Read for SyncReadAdapter<'_, '_, T> {
 ///
 /// Turns `Poll::Pending` into `WouldBlock`.
 ///
-/// The credit goes to the [futures-rustls](https://github.com/rustls/futures-rustls) 
+/// The credit goes to the [futures-rustls](https://github.com/rustls/futures-rustls)
 /// project for this adapter.
 struct SyncWriteAdapter<'a, 'b, T> {
     pub io: &'a mut T,
@@ -392,10 +391,11 @@ impl<T: AsyncWrite + Unpin> Write for SyncWriteAdapter<'_, '_, T> {
 
 #[cfg(test)]
 mod test {
-    use tokio::io::{AsyncWriteExt, AsyncReadExt};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
-    use crate::SharedKey;
+
     use super::*;
+    use crate::SharedKey;
 
     #[tokio::test]
     async fn test_async_read_write_echo() {
@@ -409,13 +409,15 @@ mod test {
             let mut server_stream = ObfuscatedStream::with_config_in(
                 Config::builder_with_shared_key(SharedKey::from([0u8; 32]))
                     .with_default_cipher_and_tcp_padding(),
-                server_inner
+                server_inner,
             );
 
             let mut buf = vec![0u8; DATA_LEN + 1024];
-            server_stream.read_exact(&mut buf[..DATA_LEN]).await.unwrap();
+            server_stream
+                .read_exact(&mut buf[..DATA_LEN])
+                .await
+                .unwrap();
             server_stream.write_all(&buf[..DATA_LEN]).await.unwrap();
-
         });
 
         let client_task = spawn(async move {
@@ -423,12 +425,15 @@ mod test {
             let mut client_stream = ObfuscatedStream::with_config_in(
                 Config::builder_with_shared_key(SharedKey::from([0u8; 32]))
                     .with_default_cipher_and_tcp_padding(),
-                client_inner
+                client_inner,
             );
             let mut buf = vec![0u8; DATA_LEN + 1024];
 
             client_stream.write_all(&data).await.unwrap();
-            client_stream.read_exact(&mut buf[..DATA_LEN]).await.unwrap();
+            client_stream
+                .read_exact(&mut buf[..DATA_LEN])
+                .await
+                .unwrap();
             assert_eq!(&buf[..DATA_LEN], &data[..]);
         });
 

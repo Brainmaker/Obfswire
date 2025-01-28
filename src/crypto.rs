@@ -1,24 +1,20 @@
 //! Crypto interface.
-//! 
-//! This module provides an interface for AEAD 
+//!
+//! This module provides an interface for AEAD
 //! (Authenticated Encryption with Associated Data) ciphers.
 
 use core::fmt::{Debug, Formatter};
 
 use blake3::Hasher;
-use rand::{
-    TryRngCore,
-    rngs::OsRng,
-};
+use rand::{rngs::OsRng, TryRngCore};
 use ring::aead::{
-    Aad, LessSafeKey, UnboundKey, Nonce, Tag,
-    CHACHA20_POLY1305, AES_128_GCM, AES_256_GCM, 
+    Aad, LessSafeKey, Nonce, Tag, UnboundKey, AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305,
 };
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-/// Authenticated Encryption with Associated Data (AEAD) cipher used by the 
+/// Authenticated Encryption with Associated Data (AEAD) cipher used by the
 /// [`Obfuscator`] or [`ObfuscatedStream`].
-/// 
+///
 /// [`Obfuscator`]: crate::Obfuscator
 /// [`ObfuscatedStream`]: crate::tokio_stream_impl::ObfuscatedStream
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
@@ -26,13 +22,13 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 pub enum CipherKind {
     /// ChaCha20-Poly1305-IETF with 128-bit tags and 96 bit nonces.
     ChaCha20Poly1305,
-    
+
     /// AES-128 in GCM mode with 128-bit tags and 96 bit nonces.
-    /// 
+    ///
     /// This is the default AEAD cipher.
     #[default]
     Aes128Gcm,
-    
+
     /// AES-256 in GCM mode with 128-bit tags and 96 bit nonces.
     Aes256Gcm,
 }
@@ -54,15 +50,17 @@ impl SharedKey {
     /// Generate a new [`SharedKey`] from system entropy.
     pub fn from_entropy() -> Self {
         let mut key = [0u8; 32];
-        OsRng.try_fill_bytes(&mut key).expect("system random source failure");
+        OsRng
+            .try_fill_bytes(&mut key)
+            .expect("system random source failure");
         Self(key)
     }
-    
+
     /// Extract this key’s bytes for serialization.
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0
     }
-    
+
     /// Get a reference to the key’s bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
@@ -93,14 +91,16 @@ pub(crate) struct SessionKey([u8; 32]);
 
 impl SessionKey {
     /// Generates an invalid key, typically used as a placeholder.
-    /// To prevent accidental use of this dumb key, 
+    /// To prevent accidental use of this dumb key,
     /// it is filled with random data from system entropy.
     pub(crate) fn dumb() -> Self {
         let mut key = [0u8; 32];
-        OsRng.try_fill_bytes(&mut key).expect("system random source failure");
+        OsRng
+            .try_fill_bytes(&mut key)
+            .expect("system random source failure");
         Self(key)
     }
-    
+
     pub(crate) fn derive_from_shared_key(shared_key: &SharedKey, salt: &[u8; 32]) -> Self {
         let mut hasher = Hasher::new();
         hasher.update(shared_key.as_ref());
@@ -108,7 +108,7 @@ impl SessionKey {
         hasher.update(b"obfswire session key from shared key and salt");
         Self(*hasher.finalize().as_bytes())
     }
-    
+
     pub(crate) fn derive_from_material(ikm: [u8; 32], context: &[u8]) -> Self {
         let mut hasher = Hasher::new();
         hasher.update(&ikm);
@@ -134,11 +134,13 @@ pub(crate) struct InitKey([u8; 32]);
 
 impl InitKey {
     /// Generates an invalid key, typically used as a placeholder.
-    /// To prevent accidental use of this dumb key, 
+    /// To prevent accidental use of this dumb key,
     /// it is filled with random data from system entropy.
     pub(crate) fn dumb() -> Self {
         let mut key = [0u8; 32];
-        OsRng.try_fill_bytes(&mut key).expect("system random source failure");
+        OsRng
+            .try_fill_bytes(&mut key)
+            .expect("system random source failure");
         Self(key)
     }
 
@@ -184,7 +186,7 @@ impl SessionCipher {
             self.session_key.clone(),
         );
     }
-    
+
     pub(crate) fn update_session_key(&mut self, ikm: [u8; 32], context: &[u8]) {
         self.session_key = SessionKey::derive_from_material(ikm, context);
         self.stateless_cipher = StatelessCipher::with_cipher_and_session_key(
@@ -238,18 +240,16 @@ struct StatelessCipher {
 impl StatelessCipher {
     const TAG_BYTES: usize = 16;
 
-    pub(crate) fn with_cipher_and_session_key(
-        ty: CipherKind,
-        session_key: SessionKey
-    ) -> Self {
+    pub(crate) fn with_cipher_and_session_key(ty: CipherKind, session_key: SessionKey) -> Self {
         Self {
             key: LessSafeKey::new(match ty {
-                CipherKind::ChaCha20Poly1305 =>
-                    UnboundKey::new(&CHACHA20_POLY1305, &session_key.0).unwrap(),
-                CipherKind::Aes128Gcm =>
-                    UnboundKey::new(&AES_128_GCM, &session_key.0[..16]).unwrap(),
-                CipherKind::Aes256Gcm =>
-                    UnboundKey::new(&AES_256_GCM, &session_key.0).unwrap(),
+                CipherKind::ChaCha20Poly1305 => {
+                    UnboundKey::new(&CHACHA20_POLY1305, &session_key.0).unwrap()
+                }
+                CipherKind::Aes128Gcm => {
+                    UnboundKey::new(&AES_128_GCM, &session_key.0[..16]).unwrap()
+                }
+                CipherKind::Aes256Gcm => UnboundKey::new(&AES_256_GCM, &session_key.0).unwrap(),
             }),
             cipher: ty,
         }
@@ -264,23 +264,24 @@ impl StatelessCipher {
 
     pub(crate) fn open(&self, in_out: &mut [u8], nonce: [u8; 12]) -> Result<(), ()> {
         let (tag, in_out) = in_out.split_at_mut(Self::TAG_BYTES);
-        self.key.open_in_place_separate_tag(
-            Nonce::assume_unique_for_key(nonce),
-            Aad::empty(),
-            Tag::from(<&[u8] as TryInto<[u8; 16]>>::try_into(tag).unwrap()),
-            in_out,
-            0..
-        ).map_err(|_| ())?;
+        self.key
+            .open_in_place_separate_tag(
+                Nonce::assume_unique_for_key(nonce),
+                Aad::empty(),
+                Tag::from(<&[u8] as TryInto<[u8; 16]>>::try_into(tag).unwrap()),
+                in_out,
+                0..,
+            )
+            .map_err(|_| ())?;
         Ok(())
     }
 
     pub(crate) fn seal(&self, in_out: &mut [u8], nonce: [u8; 12]) {
         let (tag, in_out) = in_out.split_at_mut(Self::TAG_BYTES);
-        let t = self.key.seal_in_place_separate_tag(
-            Nonce::assume_unique_for_key(nonce),
-            Aad::empty(),
-            in_out,
-        ).expect("encrypt failed, this should never happen");
+        let t = self
+            .key
+            .seal_in_place_separate_tag(Nonce::assume_unique_for_key(nonce), Aad::empty(), in_out)
+            .expect("encrypt failed, this should never happen");
         tag.copy_from_slice(t.as_ref());
     }
 }
@@ -300,57 +301,51 @@ impl CounterNonce {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn test_seal_open(cipher: CipherKind) {
-        let cipher = StatelessCipher::with_cipher_and_session_key(
-            cipher,
-            SessionKey::from([0u8; 32]),
-        );
+        let cipher =
+            StatelessCipher::with_cipher_and_session_key(cipher, SessionKey::from([0u8; 32]));
         let plaintext = b"Hello, world!";
         let mut buf = vec![0u8; StatelessCipher::TAG_BYTES];
         buf.extend_from_slice(plaintext);
-    
+
         // seal
         cipher.seal(&mut buf, [0u8; 12]);
-    
+
         // open
         assert_eq!(cipher.open(&mut buf, [0u8; 12]), Ok(()));
         assert_eq!(&buf[StatelessCipher::TAG_BYTES..], plaintext);
     }
-    
+
     fn test_empty_data(cipher: CipherKind) {
-        let cipher = StatelessCipher::with_cipher_and_session_key(
-            cipher,
-            SessionKey::from([0u8; 32]),
-        );
+        let cipher =
+            StatelessCipher::with_cipher_and_session_key(cipher, SessionKey::from([0u8; 32]));
         let mut buf = vec![0u8; StatelessCipher::TAG_BYTES];
-    
+
         // seal with empty data
         cipher.seal(&mut buf, [0u8; 12]);
         let only_tag = buf.clone();
-    
+
         // open the empty data
         assert_eq!(cipher.open(&mut buf, [0u8; 12]), Ok(()));
-    
+
         // tag should be untouched
         assert_eq!(&buf, &only_tag);
     }
-    
+
     fn test_decryption_error(cipher: CipherKind) {
-        let cipher = StatelessCipher::with_cipher_and_session_key(
-            cipher,
-            SessionKey::from([0u8; 32]),
-        );
+        let cipher =
+            StatelessCipher::with_cipher_and_session_key(cipher, SessionKey::from([0u8; 32]));
         let plaintext = b"Hello, world!";
         let mut buf = vec![0u8; StatelessCipher::TAG_BYTES];
         buf.extend_from_slice(plaintext);
-    
+
         // seal
         cipher.seal(&mut buf, [0u8; 12]);
-    
+
         // Tampering with the data
         buf[0] = buf[0].wrapping_add(1); // Modify the first byte
-    
+
         // open
         assert_eq!(cipher.open(&mut buf, [0u8; 12]), Err(()));
     }
@@ -361,14 +356,14 @@ mod tests {
         test_empty_data(CipherKind::ChaCha20Poly1305);
         test_decryption_error(CipherKind::ChaCha20Poly1305);
     }
-    
+
     #[test]
     fn test_cipher_aes_128_gcm() {
         test_seal_open(CipherKind::Aes128Gcm);
         test_empty_data(CipherKind::Aes128Gcm);
         test_decryption_error(CipherKind::Aes128Gcm);
     }
-    
+
     #[test]
     fn test_cipher_aes_256_gcm() {
         test_seal_open(CipherKind::Aes256Gcm);

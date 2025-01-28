@@ -1,9 +1,8 @@
-use tokio::{
-    net::TcpListener,
-    io::{AsyncReadExt, AsyncWriteExt},
-};
-
 use obfswire::{Config, ObfuscatedStream, SharedKey};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -16,7 +15,7 @@ async fn main() -> std::io::Result<()> {
         let mut stream = ObfuscatedStream::with_config_in(
             Config::builder_with_shared_key(SharedKey::from([0u8; 32]))
                 .with_default_cipher_and_tcp_padding(),
-            socket
+            socket,
         );
         println!("receiving obfs stream from a new client: {:?}", addr);
         tokio::spawn(async move {

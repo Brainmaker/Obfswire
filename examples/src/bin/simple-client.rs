@@ -1,9 +1,8 @@
-use tokio::{
-    net::TcpStream,
-    io::{AsyncReadExt, AsyncWriteExt}
-};
-
 use obfswire::{Config, ObfuscatedStream, SharedKey};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -12,7 +11,7 @@ async fn main() -> std::io::Result<()> {
     let mut stream = ObfuscatedStream::with_config_in(
         Config::builder_with_shared_key(SharedKey::from([0u8; 32]))
             .with_default_cipher_and_tcp_padding(),
-        socket
+        socket,
     );
     println!("connected to server: {:?}", ADDRESS);
 
@@ -26,21 +25,24 @@ async fn main() -> std::io::Result<()> {
             }
             Err(e) => {
                 println!("sending failed: {:?}", e);
-                return Err(e)
+                return Err(e);
             }
         }
 
         let mut buf = vec![0; 1024];
         match stream.read(&mut buf).await {
             Ok(n) if n > 0 => {
-                println!("echo message received: {}", String::from_utf8_lossy(&buf[..n]));
-            },
+                println!(
+                    "echo message received: {}",
+                    String::from_utf8_lossy(&buf[..n])
+                );
+            }
             Ok(_) => {
                 println!("server closed connection");
             }
             Err(e) => {
                 println!("read failed: {:?}", e);
-                return Err(e)
+                return Err(e);
             }
         }
     }

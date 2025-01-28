@@ -1,11 +1,9 @@
+use obfswire::{Config, ObfuscatedStream, SharedKey};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    io::{AsyncReadExt, AsyncWriteExt}
 };
 use x25519_dalek::{EphemeralSecret, PublicKey};
-use obfswire::{
-    Config, ObfuscatedStream, SharedKey,
-};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -18,11 +16,10 @@ async fn main() -> std::io::Result<()> {
         let mut stream = ObfuscatedStream::with_config_in(
             Config::builder_with_shared_key(SharedKey::from([0u8; 32]))
                 .with_default_cipher_and_tcp_padding(),
-            socket
+            socket,
         );
         println!("receiving obfs stream from a new client: {:?}", addr);
         tokio::spawn(async move {
-
             let server_secret = EphemeralSecret::random();
             let server_public = PublicKey::from(&server_secret);
 
@@ -35,7 +32,7 @@ async fn main() -> std::io::Result<()> {
                 .to_bytes();
             stream.update_key(key_material)?;
             println!("cv25519 key exchange successfully");
-            
+
             loop {
                 let mut buf = vec![0; 1024];
                 match stream.read(&mut buf).await {

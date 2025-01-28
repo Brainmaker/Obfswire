@@ -1,26 +1,28 @@
 use std::io::{self, BufRead, ErrorKind, Read, Write};
+
 use rand::{
-    Rng, SeedableRng, TryRngCore,
     rngs::{OsRng, StdRng},
+    Rng, SeedableRng, TryRngCore,
 };
+
 use crate::{
     codec::{
-        FrameDecoder, FrameEncoder, FrameBufMut, Command,
-        InitFrameBufMut, InitFrameDecoder, InitFrameEncoder
+        Command, FrameBufMut, FrameDecoder, FrameEncoder, InitFrameBufMut, InitFrameDecoder,
+        InitFrameEncoder,
     },
     config::{Config, EndpointType},
     crypto::SessionKey,
     error::{Error, Retryable},
     specification::{
-        INIT_FRAME_MAX_LEN, FRAME_MAX_LEN, INIT_HDR_LEN, HDR_LEN, INIT_TAG_LEN, TAG_LEN,
-        BODY_MAX_LEN, BODY_MIN_LEN, INIT_BODY_MAX_LEN, INIT_BODY_MIN_LEN, INIT_FRAME_MIN_LEN,
+        BODY_MAX_LEN, BODY_MIN_LEN, FRAME_MAX_LEN, HDR_LEN, INIT_BODY_MAX_LEN, INIT_BODY_MIN_LEN,
+        INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_HDR_LEN, INIT_TAG_LEN, TAG_LEN,
     },
 };
 
 /// A network traffic obfuscator that provides a secure communication channel.
 ///
-/// The `Obfuscator` acts as an obfuscation/deobfuscation state machine. 
-/// You provide plaintext on one side and receive encrypted traffic on the other, 
+/// The `Obfuscator` acts as an obfuscation/deobfuscation state machine.
+/// You provide plaintext on one side and receive encrypted traffic on the other,
 /// and vice versa:
 ///
 /// ```text
@@ -34,11 +36,11 @@ use crate::{
 ///                     |                   |
 ///     reader()        +-------------------+       read_wire()
 /// ```
-/// 
-/// * Use [`read_wire`] to receive and decode an obfuscated frame from a peer. 
+///
+/// * Use [`read_wire`] to receive and decode an obfuscated frame from a peer.
 ///   Then, use [`reader`] to create a [`Reader`] for reading the plaintext.
 ///
-/// * Use [`writer`] to create a [`Writer`] to write data into the internal buffer, 
+/// * Use [`writer`] to create a [`Writer`] to write data into the internal buffer,
 ///   and then use [`write_wire`] to send the obfuscated frame to the peer.
 ///
 /// [`read_wire`]: Obfuscator::read_wire
@@ -68,7 +70,9 @@ impl Obfuscator {
     /// [`config`]: crate::config
     pub fn with_config(config: Config) -> Self {
         let mut random = [0u8; 136];
-        OsRng.try_fill_bytes(&mut random).expect("system random source failure");
+        OsRng
+            .try_fill_bytes(&mut random)
+            .expect("system random source failure");
         Self::with_config_and_random(config, random)
     }
 
@@ -94,19 +98,19 @@ impl Obfuscator {
             init_state: InitState::Uninitialized,
             init_sender: InitSender::with_config_and_rng(
                 &config,
-                StdRng::from_seed(random[..32].try_into().unwrap())
+                StdRng::from_seed(random[..32].try_into().unwrap()),
             ),
             init_receiver: InitReceiver::with_config_and_rng(
                 &config,
-                StdRng::from_seed(random[32..64].try_into().unwrap())
+                StdRng::from_seed(random[32..64].try_into().unwrap()),
             ),
             sender: Sender::with_config_and_rng(
                 &config,
-                StdRng::from_seed(random[64..96].try_into().unwrap())
+                StdRng::from_seed(random[64..96].try_into().unwrap()),
             ),
             receiver: Receiver::with_config_and_rng(
                 &config,
-                StdRng::from_seed(random[96..128].try_into().unwrap())
+                StdRng::from_seed(random[96..128].try_into().unwrap()),
             ),
             stream_id: u64::from_le_bytes(random[128..].try_into().unwrap()),
         }
@@ -175,7 +179,7 @@ impl Obfuscator {
     ///      always close the connection. Generally, users should not change
     ///      their behavior in response to such errors, and there is nothing
     ///      that can be done to improve the situation.
-    /// 
+    ///
     /// [`reader`]: Obfuscator::reader
     /// [`update_key_with_notif`]: Obfuscator::update_key_with_notif
     /// [`BadDataReceived`]: Error::BadDataReceived
@@ -201,7 +205,7 @@ impl Obfuscator {
                     }
                     let Some(output) = self.init_receiver.take_output() else {
                         // If the output frame meta-info is None, it means entering DecoyMode.
-                        // At this time we continue to read until EOF or 
+                        // At this time we continue to read until EOF or
                         // the connection is interrupted externally.
                         return Ok(read_n);
                     };
@@ -276,7 +280,8 @@ impl Obfuscator {
                         self.write_state = WriteState::Eof;
                         return Ok(0);
                     }
-                    self.sender.init_session_key(self.init_sender.take_session_key());
+                    self.sender
+                        .init_session_key(self.init_sender.take_session_key());
                     self.write_state = WriteState::WaitData;
                     return Ok(write_n);
                 }
@@ -304,13 +309,13 @@ impl Obfuscator {
     /// The old key will not be involved in the update, and once updated,
     /// the old key will be cleared.
     ///
-    /// This method must be called after successful read and write operations, 
+    /// This method must be called after successful read and write operations,
     /// i.e., after `read_wire()` and `write_wire()` both return non-negative values.
-    /// Calling this method after successful read and write operations will 
+    /// Calling this method after successful read and write operations will
     /// immediately change the key for subsequent data I/O.
     ///
-    /// The application layer protocol is responsible for ensuring that both 
-    /// parties call this method synchronously. If one party calls this method 
+    /// The application layer protocol is responsible for ensuring that both
+    /// parties call this method synchronously. If one party calls this method
     /// and the other does not, communication will be interrupted due to key mismatch.
     ///
     /// The operation flow of this function is as follows:
@@ -333,14 +338,11 @@ impl Obfuscator {
     /// an I/O error with `ErrorKind::WouldBlock`.
     pub fn update_key(&mut self, key_material: [u8; 32]) -> io::Result<()> {
         let not_receving = !matches!(
-            self.read_state, 
+            self.read_state,
             ReadState::Receive | ReadState::InitialReceive
         );
-        let not_sending = !matches!(
-            self.write_state, 
-            WriteState::Send | WriteState::InitialSend
-        );
-        
+        let not_sending = !matches!(self.write_state, WriteState::Send | WriteState::InitialSend);
+
         if not_receving && not_sending {
             self.receiver.update_key(key_material);
             self.sender.update_key(key_material);
@@ -349,27 +351,27 @@ impl Obfuscator {
             Err(ErrorKind::WouldBlock.into())
         }
     }
-    
-    /// Sends a key update notification to the peer and updates the session key 
+
+    /// Sends a key update notification to the peer and updates the session key
     /// after sending the notification.
     ///
     /// The old key will not be involved in the update, and once updated,
     /// the old key will be cleared.
     ///
-    /// This function can be called at any time. After calling this function, 
-    /// the key will not be immediately changed. Instead, a key change 
-    /// notification will be sent to the peer in the next read/write cycle, and 
+    /// This function can be called at any time. After calling this function,
+    /// the key will not be immediately changed. Instead, a key change
+    /// notification will be sent to the peer in the next read/write cycle, and
     /// the new key will be used in the cycle following the notification.
     ///
-    /// If one party calls this method and the other does not, the party that 
-    /// did not call it will return [`Retryable::KeyMaterialRequired`] when 
+    /// If one party calls this method and the other does not, the party that
+    /// did not call it will return [`Retryable::KeyMaterialRequired`] when
     /// calling `read_wire`, causing the read operation to be interrupted.
     /// In this case, you should call `update_key_with_notif` to provide the key m
     /// aterial and then call `read_wire` again to resume reading.
     ///
     /// The operation flow of this function is as follows:
     /// ```text
-    ///     update_key_with_notif 
+    ///     update_key_with_notif
     ///               |              
     ///               |      NOTIF           
     ///               V    |       |         
@@ -377,14 +379,14 @@ impl Obfuscator {
     ///    |  R/W  |  R/W  |  R/W  |  R/W  |  R/W  |  R/W  | ...
     ///    +-------+-------+-------+-------+-------+-------+----
     ///    |     <- old key ->     |     <- new key ->     |
-    /// 
+    ///
     /// R/W: Represents a successful read_wire/write_wire operation
     /// ```
     pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) {
         self.receiver.ready_for_update_key_notif(key_material);
         self.sender.update_key_with_notif(key_material);
     }
-    
+
     /// Returns a [`Reader`] that allows reading plaintext
     /// from the obfuscator's internal receive buffer.
     pub fn reader(&mut self) -> Reader<'_> {
@@ -400,17 +402,17 @@ impl Obfuscator {
 
 /// A structure that implements [`Read`] and [`BufRead`] for reading plaintext data.
 ///
-/// `Reader` points to the internal receive buffer of the [`Obfuscator`]. 
+/// `Reader` points to the internal receive buffer of the [`Obfuscator`].
 /// To create a `Reader`, use the [`reader`] method.
-/// 
+///
 /// [`reader`]: Obfuscator::reader
 #[derive(Debug)]
 pub struct Reader<'a>(&'a mut Obfuscator);
 
 impl Reader<'_> {
-    /// Returns the number of unread bytes that can be read from the internal 
+    /// Returns the number of unread bytes that can be read from the internal
     /// receive buffer.
-    /// 
+    ///
     /// If the underlying connection is already closed or the obfuscator is
     /// currently receiving data from the wire, this function returns `0`.
     pub fn remaining(&self) -> usize {
@@ -418,17 +420,17 @@ impl Reader<'_> {
             ReadState::InitialPayloadReady => match self.0.init_receiver.state {
                 InitFrameReadState::PayloadReady { payload_len, n } => payload_len - n,
                 _ => 0,
-            }
+            },
             ReadState::PayloadReady => match self.0.receiver.state {
                 FrameReadState::PayloadReady { payload_len, n } => payload_len - n,
                 _ => 0,
-            }
+            },
             _ => 0,
         }
     }
 
     /// Returns true if there is unread data in the reader.
-    /// 
+    ///
     /// This is equivalent to `self.remaining() != 0`.
     pub fn has_remaining(&self) -> bool {
         self.remaining() != 0
@@ -437,10 +439,10 @@ impl Reader<'_> {
 
 impl Read for Reader<'_> {
     /// Reads plaintext from the internal receive buffer of the [`Obfuscator`].
-    /// 
-    /// If this function returns `Ok(n)` where `n > 0`, it indicates that `n` 
+    ///
+    /// If this function returns `Ok(n)` where `n > 0`, it indicates that `n`
     /// bytes have been read from the internal buffer and consumed.
-    /// 
+    ///
     /// If the underlying connection is closed, this function always
     /// returns `Ok(0)`.
     ///
@@ -470,16 +472,16 @@ impl BufRead for Reader<'_> {
         match self.0.read_state {
             ReadState::InitialPayloadReady => match self.0.init_receiver.state {
                 InitFrameReadState::PayloadReady { payload_len, .. } => {
-                    Ok(&self.0.init_receiver.buf[INIT_TAG_LEN..INIT_TAG_LEN+payload_len])
+                    Ok(&self.0.init_receiver.buf[INIT_TAG_LEN..INIT_TAG_LEN + payload_len])
                 }
                 _ => Err(ErrorKind::WouldBlock.into()),
-            }
+            },
             ReadState::PayloadReady => match self.0.receiver.state {
                 FrameReadState::PayloadReady { payload_len, .. } => {
-                    Ok(&self.0.receiver.buf[TAG_LEN..TAG_LEN+payload_len])
+                    Ok(&self.0.receiver.buf[TAG_LEN..TAG_LEN + payload_len])
                 }
                 _ => Err(ErrorKind::WouldBlock.into()),
-            }
+            },
             ReadState::Eof => Ok(&[]),
             _ => Err(ErrorKind::WouldBlock.into()),
         }
@@ -498,22 +500,30 @@ impl BufRead for Reader<'_> {
     /// has closed, `amt` will be ignored.
     fn consume(&mut self, amt: usize) {
         match self.0.read_state {
-            ReadState::InitialPayloadReady =>
-                if let InitFrameReadState::PayloadReady { ref mut n, payload_len }
-                    = self.0.init_receiver.state {
-                if *n + amt >= payload_len {
-                    *n = payload_len;
-                } else {
-                    *n += amt;
+            ReadState::InitialPayloadReady => {
+                if let InitFrameReadState::PayloadReady {
+                    ref mut n,
+                    payload_len,
+                } = self.0.init_receiver.state
+                {
+                    if *n + amt >= payload_len {
+                        *n = payload_len;
+                    } else {
+                        *n += amt;
+                    }
                 }
             }
-            ReadState::PayloadReady =>
-                if let FrameReadState::PayloadReady { ref mut n, payload_len }
-                    = self.0.receiver.state {
-                if *n + amt >= payload_len {
-                    *n = payload_len;
-                } else {
-                    *n += amt;
+            ReadState::PayloadReady => {
+                if let FrameReadState::PayloadReady {
+                    ref mut n,
+                    payload_len,
+                } = self.0.receiver.state
+                {
+                    if *n + amt >= payload_len {
+                        *n = payload_len;
+                    } else {
+                        *n += amt;
+                    }
                 }
             }
             _ => {}
@@ -523,24 +533,24 @@ impl BufRead for Reader<'_> {
 
 /// A structure that implements [`Write`] for writing plaintext data.
 ///
-/// `Writer` points to the internal send buffer of the [`Obfuscator`]. 
+/// `Writer` points to the internal send buffer of the [`Obfuscator`].
 /// To create a `Writer`, use the [`writer`] method.
-/// 
+///
 /// [`writer`]: Obfuscator::writer
 #[derive(Debug)]
 pub struct Writer<'a>(&'a mut Obfuscator);
 
 impl Writer<'_> {
     /// Returns the number of bytes that can be written to the internal send buffer.
-    /// 
-    /// If the underlying connection is already closed or the obfuscator is 
+    ///
+    /// If the underlying connection is already closed or the obfuscator is
     /// currently sending data to the wire, this function returns `0`
     pub fn remaining_mut(&self) -> usize {
         match self.0.write_state {
             WriteState::InitialSend => match self.0.init_sender.state {
                 InitFrameWriteState::Wait { .. } => self.0.init_sender.buf.remaining(),
                 _ => 0,
-            }
+            },
             WriteState::Send => self.0.sender.buf.remaining(),
             _ => 0,
         }
@@ -585,7 +595,7 @@ impl Write for Writer<'_> {
                 let k = std::cmp::min(buf.len(), remaining);
                 self.0.sender.buf.push_payload(&buf[..k]);
                 Ok(k)
-            },
+            }
             WriteState::Eof => Ok(0),
             _ => Err(ErrorKind::WouldBlock.into()),
         }
@@ -667,11 +677,14 @@ struct InitReceiver {
 impl InitReceiver {
     fn with_config_and_rng(config: &Config, rng: StdRng) -> Self {
         Self {
-            state: InitFrameReadState::ReadHeader { n: 0, total: INIT_HDR_LEN },
+            state: InitFrameReadState::ReadHeader {
+                n: 0,
+                total: INIT_HDR_LEN,
+            },
             buf: vec![0x00; INIT_FRAME_MAX_LEN],
             decoder: InitFrameDecoder::with_config(config),
             output: None,
-            rng
+            rng,
         }
     }
 
@@ -701,7 +714,7 @@ impl InitReceiver {
                         total,
                     };
                 }
-                InitFrameReadState::ReadHeader { total, .. } =>
+                InitFrameReadState::ReadHeader { total, .. } => {
                     match self.decoder.open_header(&mut self.buf[..total]) {
                         Ok(header) => {
                             self.output = Some(InitReceiverOutput {
@@ -719,32 +732,42 @@ impl InitReceiver {
                                 n: 0,
                                 total: self.rng.random_range(INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN),
                             };
-                            return Err(Error::BadDataReceived(e).into())
-                        },
-                        Err(e) => return Err(e.into())
+                            return Err(Error::BadDataReceived(e).into());
+                        }
+                        Err(e) => return Err(e.into()),
                     }
-                InitFrameReadState::ReadBody { n, total, payload_len } if n < total => {
+                }
+                InitFrameReadState::ReadBody {
+                    n,
+                    total,
+                    payload_len,
+                } if n < total => {
                     self.state = InitFrameReadState::ReadBody {
                         n: n + handle_io_result!(reader.read(&mut self.buf[n..total])),
                         total,
                         payload_len,
                     }
                 }
-                InitFrameReadState::ReadBody { total, payload_len, .. } =>
+                InitFrameReadState::ReadBody {
+                    total, payload_len, ..
+                } => {
                     return match self.decoder.open_body(&mut self.buf[..total]) {
                         Ok(()) => {
                             self.state = InitFrameReadState::PayloadReady { n: 0, payload_len };
                             Ok(INIT_HDR_LEN + total)
-                        },
+                        }
                         Err(Error::BadDataReceived(e)) => {
                             self.state = InitFrameReadState::DecoyMode {
                                 n: 0,
-                                total: self.rng.random_range(INIT_FRAME_MIN_LEN..=INIT_FRAME_MAX_LEN),
+                                total: self
+                                    .rng
+                                    .random_range(INIT_FRAME_MIN_LEN..=INIT_FRAME_MAX_LEN),
                             };
                             Err(Error::BadDataReceived(e).into())
-                        },
+                        }
                         Err(e) => Err(e.into()),
-                    },
+                    }
+                }
                 InitFrameReadState::PayloadReady { .. } => {
                     unreachable!("programming error: PayloadReady state should not be reached")
                 }
@@ -755,9 +778,9 @@ impl InitReceiver {
                     }
                 }
                 InitFrameReadState::DecoyMode { total, .. } => {
-                    // Return the number of bytes read in DecoyMode to encourage 
+                    // Return the number of bytes read in DecoyMode to encourage
                     // normal connection closure
-                    return Ok(total)
+                    return Ok(total);
                 }
             }
         }
@@ -766,10 +789,23 @@ impl InitReceiver {
 
 #[derive(Debug, Eq, PartialEq)]
 enum InitFrameReadState {
-    ReadHeader { n: usize, total: usize },
-    ReadBody { n: usize, total: usize, payload_len: usize },
-    PayloadReady { n: usize, payload_len: usize },
-    DecoyMode { n: usize, total: usize },
+    ReadHeader {
+        n: usize,
+        total: usize,
+    },
+    ReadBody {
+        n: usize,
+        total: usize,
+        payload_len: usize,
+    },
+    PayloadReady {
+        n: usize,
+        payload_len: usize,
+    },
+    DecoyMode {
+        n: usize,
+        total: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -805,7 +841,10 @@ struct Receiver {
 impl Receiver {
     fn with_config_and_rng(config: &Config, rng: StdRng) -> Self {
         Self {
-            state: FrameReadState::ReadHeader { n: 0, total: HDR_LEN },
+            state: FrameReadState::ReadHeader {
+                n: 0,
+                total: HDR_LEN,
+            },
             key_state: ReceiverKeyState::None,
             buf: vec![0u8; FRAME_MAX_LEN],
             decoder: FrameDecoder::with_config(config),
@@ -825,7 +864,7 @@ impl Receiver {
     fn ready_for_update_key_notif(&mut self, key_material: [u8; 32]) {
         self.key_material = Some(key_material);
     }
-    
+
     fn update_key(&mut self, key_material: [u8; 32]) {
         self.decoder.update_key_by_material(key_material);
     }
@@ -839,7 +878,7 @@ impl Receiver {
                         total,
                     }
                 }
-                FrameReadState::ReadHeader { total, .. } =>
+                FrameReadState::ReadHeader { total, .. } => {
                     match self.decoder.open_header(&mut self.buf[..total]) {
                         Ok(header) => {
                             if header.command == Command::PeerTxKeyWillChange {
@@ -856,47 +895,63 @@ impl Receiver {
                                 n: 0,
                                 total: self.rng.random_range(BODY_MIN_LEN..=BODY_MAX_LEN),
                             };
-                            return Err(Error::BadDataReceived(e).into())
-                        },
+                            return Err(Error::BadDataReceived(e).into());
+                        }
                         Err(e) => return Err(e.into()),
                     }
-                FrameReadState::ReadBody { n, total, payload_len } if n < total => {
+                }
+                FrameReadState::ReadBody {
+                    n,
+                    total,
+                    payload_len,
+                } if n < total => {
                     self.state = FrameReadState::ReadBody {
                         n: n + handle_io_result!(reader.read(&mut self.buf[n..total])),
                         total,
-                        payload_len
+                        payload_len,
                     }
                 }
-                FrameReadState::ReadBody { total, payload_len, .. } =>
+                FrameReadState::ReadBody {
+                    total, payload_len, ..
+                } => {
                     return match self.decoder.open_body(&mut self.buf[..total]) {
                         Ok(()) => {
                             self.state = FrameReadState::PayloadReady { n: 0, payload_len };
                             Ok(HDR_LEN + total)
-                        },
+                        }
                         Err(Error::BadDataReceived(e)) => {
                             self.state = FrameReadState::DecoyMode {
                                 n: 0,
-                                total: self.rng.random_range(INIT_FRAME_MIN_LEN..=INIT_FRAME_MAX_LEN),
+                                total: self
+                                    .rng
+                                    .random_range(INIT_FRAME_MIN_LEN..=INIT_FRAME_MAX_LEN),
                             };
                             Err(Error::BadDataReceived(e).into())
-                        },
+                        }
                         Err(e) => Err(e.into()),
-                    },
+                    }
+                }
                 FrameReadState::PayloadReady { .. } => match self.key_state {
                     ReceiverKeyState::None => {
-                        self.state = FrameReadState::ReadHeader { n: 0, total: HDR_LEN };
+                        self.state = FrameReadState::ReadHeader {
+                            n: 0,
+                            total: HDR_LEN,
+                        };
                     }
                     ReceiverKeyState::WaitChangeKey => match self.key_material.take() {
                         Some(key_material) => {
                             self.decoder.update_key_by_material(key_material);
                             self.key_state = ReceiverKeyState::None;
-                            self.state = FrameReadState::ReadHeader { n: 0, total: HDR_LEN };
+                            self.state = FrameReadState::ReadHeader {
+                                n: 0,
+                                total: HDR_LEN,
+                            };
                         }
                         None => {
                             return Err(Retryable::KeyMaterialRequired.into());
                         }
-                    }
-                }
+                    },
+                },
                 FrameReadState::DecoyMode { n, total } if n < total => {
                     self.state = FrameReadState::DecoyMode {
                         n: n + handle_io_result!(reader.read(&mut self.buf[n..total])),
@@ -913,10 +968,23 @@ impl Receiver {
 
 #[derive(Debug, Eq, PartialEq)]
 enum FrameReadState {
-    ReadHeader { n: usize, total: usize },
-    ReadBody { n: usize, total: usize, payload_len: usize },
-    PayloadReady { n: usize, payload_len: usize },
-    DecoyMode { n: usize, total: usize },
+    ReadHeader {
+        n: usize,
+        total: usize,
+    },
+    ReadBody {
+        n: usize,
+        total: usize,
+        payload_len: usize,
+    },
+    PayloadReady {
+        n: usize,
+        payload_len: usize,
+    },
+    DecoyMode {
+        n: usize,
+        total: usize,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -965,7 +1033,9 @@ impl InitSender {
     }
 
     fn take_session_key(&mut self) -> SessionKey {
-        self.session_key.take().expect("Programming Error: Session key is None")
+        self.session_key
+            .take()
+            .expect("Programming Error: Session key is None")
     }
 
     fn write_wire(&mut self, writer: &mut dyn Write) -> io::Result<usize> {
@@ -992,7 +1062,6 @@ impl InitSender {
             }
         }
     }
-
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1043,7 +1112,7 @@ impl Sender {
             self.key_state = SenderKeyState::WaitChangeKey(key_material);
         }
     }
-    
+
     fn update_key(&mut self, key_material: [u8; 32]) {
         self.encoder.update_key_by_material(key_material);
     }
@@ -1056,7 +1125,7 @@ impl Sender {
                         SenderKeyState::WaitChangeKey(key_material) => {
                             self.key_state = SenderKeyState::KeyWillChange(key_material);
                             Command::PeerTxKeyWillChange
-                        },
+                        }
                         _ => Command::Payload,
                     };
                     self.encoder.seal(command, &mut self.buf);
@@ -1078,7 +1147,7 @@ impl Sender {
                         self.key_state = SenderKeyState::None;
                     }
                     self.state = FrameWriteState::Wait;
-                    return Ok(total)
+                    return Ok(total);
                 }
             }
         }
@@ -1121,16 +1190,18 @@ enum SenderKeyState {
 #[cfg(test)]
 mod test {
     use std::collections::VecDeque;
+
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+
+    use super::*;
     use crate::{
         config::{Config, PadOption},
         crypto::SharedKey,
         error::BadDataReceived,
-        specification::{PAYLOAD_MIN_LEN, INIT_SALT_LEN},
-        test::MockStream
+        specification::{INIT_SALT_LEN, PAYLOAD_MIN_LEN},
+        test::MockStream,
     };
-    use super::*;
 
     fn cfg_no_pad() -> Config {
         Config {
@@ -1139,7 +1210,7 @@ mod test {
             pad_option: PadOption::None,
         }
     }
-    
+
     fn cfg_with_mpu(link_mpu: u16) -> Config {
         Config {
             shared_key: SharedKey::from([0u8; 32]),
@@ -1147,7 +1218,7 @@ mod test {
             pad_option: PadOption::UniformTail { link_mpu },
         }
     }
-    
+
     fn cfg_tcp_pad() -> Config {
         Config {
             shared_key: SharedKey::from([0u8; 32]),
@@ -1161,7 +1232,7 @@ mod test {
         let mut mock_stream = MockStream::default();
         let mut rng = StdRng::from_seed([0u8; 32]);
         let dummy_data = vec![0xaau8; 70000];
-        
+
         let mut client = Obfuscator::with_config_and_random(cfg_no_pad(), [1; 136]);
         let mut server = Obfuscator::with_config_and_random(cfg_no_pad(), [2; 136]);
 
@@ -1277,7 +1348,7 @@ mod test {
         client.write_wire(&mut mock_stream).unwrap();
         let w2 = client.writer().write(&[0xaau8; 100]).unwrap();
         client.write_wire(&mut mock_stream).unwrap();
-        
+
         server.read_wire(&mut mock_stream).unwrap();
         let mut reader = server.reader();
         let mut buf = vec![0u8; 200];
@@ -1291,14 +1362,14 @@ mod test {
         assert_eq!(w2, r2);
         reader.consume(r2);
         assert!(!reader.has_remaining());
-        reader.consume(65536);  // no effect. 
-        
+        reader.consume(65536); // no effect.
+
         mock_stream.set_eof();
         assert_eq!(server.read_wire(&mut mock_stream).unwrap(), 0);
         let mut reader = server.reader();
         assert_eq!(reader.fill_buf().unwrap(), &[]);
     }
-    
+
     #[test]
     fn test_writer() {
         let dummy_data = vec![0u8; 70000];
@@ -1316,12 +1387,11 @@ mod test {
             let n = writer.write(&dummy_data).unwrap();
             assert!(matches!(
                 writer.write(&dummy_data), 
-                Err(e) if e.kind() == ErrorKind::WouldBlock)
-            );
+                Err(e) if e.kind() == ErrorKind::WouldBlock));
             n
         };
         client.write_wire(&mut mock_stream).unwrap();
-        
+
         server.read_wire(&mut mock_stream).unwrap();
         let r1 = server.reader().fill_buf().unwrap().len();
         assert_eq!(w1, r1);
@@ -1329,64 +1399,64 @@ mod test {
         server.read_wire(&mut mock_stream).unwrap();
         let r2 = server.reader().fill_buf().unwrap().len();
         assert_eq!(w2, r2);
-        
+
         mock_stream.set_eof();
         assert_eq!(server.write_wire(&mut mock_stream).unwrap(), 0);
         assert_eq!(server.writer().write(b"cannot send").unwrap(), 0);
     }
-    
+
     #[test]
     fn test_update_key() {
         let mut mock_stream = MockStream::default();
         let mut client = Obfuscator::with_config_and_random(cfg_no_pad(), [8; 136]);
         let mut server = Obfuscator::with_config_and_random(cfg_no_pad(), [9; 136]);
-    
+
         client.write_wire(&mut mock_stream).unwrap();
         server.read_wire(&mut mock_stream).unwrap();
         server.update_key([1u8; 32]).unwrap();
         client.update_key([1u8; 32]).unwrap();
-        
+
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         server.update_key([2u8; 32]).unwrap();
         client.update_key([2u8; 32]).unwrap();
-        
+
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         server.update_key([3u8; 32]).unwrap();
         client.update_key([3u8; 32]).unwrap();
-    
+
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
     }
-    
+
     #[test]
     fn test_update_key_with_notif() {
         let mut mock_stream = MockStream::default();
         let mut client = Obfuscator::with_config_and_random(cfg_no_pad(), [10; 136]);
         let mut server = Obfuscator::with_config_and_random(cfg_no_pad(), [10; 136]);
-    
+
         client.write_wire(&mut mock_stream).unwrap();
         server.read_wire(&mut mock_stream).unwrap();
-    
+
         server.update_key_with_notif([1u8; 32]);
         client.update_key_with_notif([1u8; 32]);
-        
+
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
-        
+
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
-        
+
         server.update_key_with_notif([2u8; 32]);
         client.update_key_with_notif([2u8; 32]);
-    
+
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
@@ -1397,7 +1467,7 @@ mod test {
     fn test_pipe_tempered_init_header() {
         let dummy_data = vec![0xaau8; 80000];
         let mut mock_stream = MockStream::default();
-        
+
         const N_TESTS: u64 = 1024;
         for i in 0..N_TESTS {
             let random = {
@@ -1423,10 +1493,13 @@ mod test {
 
             // Assert the server pipe into decoy mode.
             assert_eq!(server.read_state, ReadState::InitialReceive);
-            assert!(matches!(server.init_receiver.state, InitFrameReadState::DecoyMode { .. }));
+            assert!(matches!(
+                server.init_receiver.state,
+                InitFrameReadState::DecoyMode { .. }
+            ));
 
             // Inject enough data into mock stream.
-            // If the data is insufficient, it will cause read_wire 
+            // If the data is insufficient, it will cause read_wire
             // to return WouldBlock error (raised by MockStream).
             let _ = client.writer().write(&dummy_data);
             let _ = client.write_wire(&mut mock_stream).unwrap();
@@ -1463,17 +1536,24 @@ mod test {
             let err = server.read_wire(&mut mock_stream).unwrap_err();
             assert_eq!(err.kind(), ErrorKind::Other);
             let err = err.downcast::<Error>().unwrap();
-            assert!(matches!(
-                err,
-                Error::BadDataReceived(BadDataReceived::InitFrameBodyFailed)
-            ), "{}", err);
+            assert!(
+                matches!(
+                    err,
+                    Error::BadDataReceived(BadDataReceived::InitFrameBodyFailed)
+                ),
+                "{}",
+                err
+            );
 
             // Assert the server pipe into decoy mode.
             assert_eq!(server.read_state, ReadState::InitialReceive);
-            assert!(matches!(server.init_receiver.state, InitFrameReadState::DecoyMode { .. }));
+            assert!(matches!(
+                server.init_receiver.state,
+                InitFrameReadState::DecoyMode { .. }
+            ));
 
             // Inject enough data into mock stream.
-            // If the data is insufficient, it will cause read_wire 
+            // If the data is insufficient, it will cause read_wire
             // to return WouldBlock error (raised by MockStream).
             let _ = client.writer().write(&dummy_data);
             let _ = client.write_wire(&mut mock_stream).unwrap();
@@ -1501,18 +1581,18 @@ mod test {
             };
             let mut client = Obfuscator::with_config_and_random(cfg_tcp_pad(), random);
             let mut server = Obfuscator::with_config_and_random(cfg_tcp_pad(), random);
-            
+
             // transmit init frame.
             let _ = client.write_wire(&mut mock_stream).unwrap();
             let _ = server.read_wire(&mut mock_stream).unwrap();
-            
+
             // send normal frame
             let _ = client.writer().write(&dummy_data).unwrap();
             let _ = client.write_wire(&mut mock_stream).unwrap();
 
             // Tempering the normal frame header
             mock_stream.buf[0] = mock_stream.buf[0].wrapping_add(1);
-            
+
             // Read tempered data
             let err = server.read_wire(&mut mock_stream).unwrap_err();
             assert_eq!(err.kind(), ErrorKind::Other);
@@ -1524,16 +1604,19 @@ mod test {
 
             // Assert the server pipe into decoy mode.
             assert_eq!(server.read_state, ReadState::Receive);
-            assert!(matches!(server.receiver.state, FrameReadState::DecoyMode { .. }));
+            assert!(matches!(
+                server.receiver.state,
+                FrameReadState::DecoyMode { .. }
+            ));
 
             // Inject enough data into mock stream.
-            // If the data is insufficient, it will cause read_wire 
+            // If the data is insufficient, it will cause read_wire
             // to return WouldBlock error (raised by MockStream).
             let _ = client.writer().write(&dummy_data);
             let _ = client.write_wire(&mut mock_stream).unwrap();
             let _ = client.writer().write(&dummy_data);
             let _ = client.write_wire(&mut mock_stream).unwrap();
-            
+
             // Read in decoy mode.
             let decoy_read_n = server.read_wire(&mut mock_stream).unwrap();
             assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&decoy_read_n));
@@ -1555,7 +1638,7 @@ mod test {
             };
             let mut client = Obfuscator::with_config_and_random(cfg_tcp_pad(), random);
             let mut server = Obfuscator::with_config_and_random(cfg_tcp_pad(), random);
-            
+
             // transmit init frame.
             let _ = client.write_wire(&mut mock_stream).unwrap();
             let _ = server.read_wire(&mut mock_stream).unwrap();
@@ -1565,7 +1648,7 @@ mod test {
             let _ = client.write_wire(&mut mock_stream).unwrap();
 
             // Tempering the normal frame body
-            mock_stream.buf[HDR_LEN+1] = mock_stream.buf[HDR_LEN+1].wrapping_add(1);
+            mock_stream.buf[HDR_LEN + 1] = mock_stream.buf[HDR_LEN + 1].wrapping_add(1);
 
             // Read tempered data
             let err = server.read_wire(&mut mock_stream).unwrap_err();
@@ -1578,10 +1661,13 @@ mod test {
 
             // Assert the server pipe into decoy mode.
             assert_eq!(server.read_state, ReadState::Receive);
-            assert!(matches!(server.receiver.state, FrameReadState::DecoyMode { .. }));
+            assert!(matches!(
+                server.receiver.state,
+                FrameReadState::DecoyMode { .. }
+            ));
 
             // Inject enough data into mock stream.
-            // If the data is insufficient, it will cause read_wire 
+            // If the data is insufficient, it will cause read_wire
             // to return WouldBlock error (raised by MockStream).
             let _ = client.writer().write(&dummy_data);
             let _ = client.write_wire(&mut mock_stream).unwrap();
@@ -1596,12 +1682,8 @@ mod test {
     }
 
     #[test]
-    fn test_pipe_replay_on_client() {
-
-    }
+    fn test_pipe_replay_on_client() {}
 
     #[test]
-    fn test_pipe_replay_on_server() {
-
-    }
+    fn test_pipe_replay_on_server() {}
 }

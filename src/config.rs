@@ -62,7 +62,7 @@ pub struct Config {
 }
 
 /// A builder for creating a [`Config`] instance.
-/// 
+///
 /// To get a [`ConfigBuilder`], use [`Config::builder_with_shared_key`].
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ConfigBuilder<State> {
@@ -73,9 +73,7 @@ impl Config {
     /// Sets up a shared key.
     pub fn builder_with_shared_key(shared_key: SharedKey) -> ConfigBuilder<WantsCipher> {
         ConfigBuilder {
-            state: WantsCipher {
-                shared_key,
-            }
+            state: WantsCipher { shared_key },
         }
     }
 }
@@ -89,7 +87,7 @@ impl ConfigBuilder<WantsCipher> {
             state: WantsPadConfig {
                 shared_key: self.state.shared_key,
                 cipher,
-            }
+            },
         }
     }
 
@@ -99,7 +97,7 @@ impl ConfigBuilder<WantsCipher> {
             state: WantsPadConfig {
                 shared_key: self.state.shared_key,
                 cipher: CipherKind::default(),
-            }
+            },
         }
     }
 
@@ -124,9 +122,9 @@ impl ConfigBuilder<WantsPadConfig> {
         }
     }
 
-    /// If the packet can fill the maximum payload unit (MPU) that the 
-    /// underlying connection can transmit, no padding is added. If the packet 
-    /// length does not fill the MPU, the packet length is adjusted to follow 
+    /// If the packet can fill the maximum payload unit (MPU) that the
+    /// underlying connection can transmit, no padding is added. If the packet
+    /// length does not fill the MPU, the packet length is adjusted to follow
     /// a uniform distribution.
     ///
     /// ## Panic
@@ -140,7 +138,7 @@ impl ConfigBuilder<WantsPadConfig> {
         }
     }
 
-    /// When the underlying link is TCP, use the TCP MSS as the maximum payload 
+    /// When the underlying link is TCP, use the TCP MSS as the maximum payload
     /// unit (MPU) for the padding algorithm.
     pub fn with_default_tcp_padding(self) -> Config {
         Config {
