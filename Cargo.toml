@@ -1,10 +1,11 @@
 [package]
 name = "obfswire"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Brainmaker"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Brainmaker/Obfswire"
+documentation = "https://docs.rs/obfswire/"
 description = """
 A library for obfuscating network traffic, designed to resist deep packet
 inspection (DPI) and active probing of network endpoints.
