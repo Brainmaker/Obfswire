@@ -1,7 +1,7 @@
 # Obfswire
 
+[![Build Status](https://github.com/Brainmaker/Obfswire/actions/workflows/ci.yml/badge.svg)](https://github.com/Brainmaker/Obfswire/actions/workflows/ci.yml)
 ![License: MIT or Apache 2.0](https://img.shields.io/badge/license-MIT%20or%20Apache%202.0-blue)
-
 
 Obfswire is a network obfuscation protocol designed to counter Deep Packet 
 Inspection (DPI) and active probing, offering privacy and anti-analysis 
