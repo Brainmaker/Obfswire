@@ -22,8 +22,9 @@ capabilities for reliable and ordered stream transmission.
   minimizing performance overhead caused by nested encryption.
 - Implements a fully state-driven sans-I/O protocol, without handling network 
   I/O directly or spawning internal threads.
-- Optionally supports asynchronous streams based on `tokio`, providing 
-  an interface similar to `TcpStream` for async application development.
+- Optionally supports asynchronous streams based on [`tokio`][tokio-link], 
+  providing an interface similar to [`TcpStream`][tcp-stream-link] for async 
+  application development.
 
 ## Design Goals
 
@@ -32,7 +33,7 @@ capabilities for reliable and ordered stream transmission.
 Obfswire establishes an obfuscated tunnel between two endpoints, aiming to make 
 transmitted content indistinguishable from random byte streams. It also protects 
 against active probing and non-content protocol fingerprinting, 
-adhering to the threat model of [obfs4](https://github.com/Yawning/obfs4).
+adhering to the threat model of [obfs4][obfs4-link].
 
 #### Obfswire Focuses on Modular Obfuscation
 
@@ -45,8 +46,8 @@ meet diverse application needs.
 
 While obfswire typically operates over reliable and ordered streams, such as TCP 
 connections, it is not strictly tied to TCP. Any underlying transport implementing 
-Rust’s `Read` and `Write` traits can be used as the foundation for obfswire's 
-obfuscation pipeline.
+Rust’s [`Read`][read-trait-link] and [`Write`][write-trait-link] traits can be 
+used as the foundation for obfswire's obfuscation pipeline.
 
 #### Obfswire Integrates with Application-Layer Forward Secrecy
 
@@ -145,3 +146,9 @@ For more practical examples, refer to the [examples](examples/src/bin) directory
 This project is licensed under either of
 - MIT license ([LICENSE-MIT](http://opensource.org/licenses/MIT))
 - Apache License, Version 2.0 ([LICENSE-APACHE](http://www.apache.org/licenses/LICENSE-2.0)) at your option.
+
+[obfs4-link]: https://github.com/Yawning/obfs4/blob/master/doc/obfs4-spec.txt#L35
+[tokio-link]: https://tokio.rs/
+[tcp-stream-link]: https://docs.rs/tokio/latest/tokio/net/struct.TcpStream.html
+[read-trait-link]: https://doc.rust-lang.org/std/io/trait.Read.html
+[write-trait-link]: https://doc.rust-lang.org/std/io/trait.Write.html
