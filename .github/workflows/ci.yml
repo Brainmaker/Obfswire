@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  rust_stable: 1.84.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+
+      - name: cargo build (debug; all features)
+        run: cargo build --locked --all-features
+
+      - name: cargo test (debug; all features)
+        run: cargo test --locked --all-features
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: cargo clippy (all targets)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo fmt (check)
+        run: cargo fmt -- --check
