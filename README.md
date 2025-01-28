@@ -81,10 +81,10 @@ use tokio::{
 async fn main() -> std::io::Result<()> {
     let message = b"Hello, world!";
 
-    // Setup TCP listener
+    // Setup a TCP listener
     let listener = TcpListener::bind("127.0.0.1:8888").await?;
 
-    // Setup client/server common configuration
+    // Setup a client/server common configuration
     let config = Config::builder_with_shared_key(SharedKey::from_entropy())
         .with_default_cipher_and_tcp_padding();
 
@@ -93,7 +93,7 @@ async fn main() -> std::io::Result<()> {
         // Get a TCP connection
         let stream = TcpStream::connect("127.0.0.1:8888").await?;
 
-        // Setup client stream of obfswire
+        // Setup a client stream of obfswire
         let mut client_stream = ObfuscatedStream::with_config_in(client_config, stream);
 
         // Do some I/O
@@ -108,7 +108,7 @@ async fn main() -> std::io::Result<()> {
     while let Ok((stream, _)) = listener.accept().await {
         let server_config = config.clone();
 
-        // handle client connection
+        // Handle client connection
         tokio::spawn(async move {
             // Setup server stream of obfswire
             let mut server_stream = ObfuscatedStream::with_config_in(server_config, stream);
