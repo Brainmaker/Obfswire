@@ -1,0 +1,32 @@
+[package]
+name = "obfswire-examples"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0 OR MIT"
+description = "obfswire example code and tests."
+publish = false
+
+[dependencies]
+obfswire = { path = "..", features = ["tokio-stream-impl"] }
+tokio = { version = "1", features = ["full"] }
+x25519-dalek = { version = "2", features = ["getrandom"] }
+
+[[bin]]
+name = "simple-client"
+path = "src/bin/simple-client.rs"
+
+[[bin]]
+name = "simple-server"
+path = "src/bin/simple-server.rs"
+
+[[bin]]
+name = "kx-client"
+path = "src/bin/kx-client.rs"
+
+[[bin]]
+name = "kx-server"
+path = "src/bin/kx-server.rs"
+
+[[bin]]
+name = "readme-example"
+path = "src/bin/readme-example.rs"

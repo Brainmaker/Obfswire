@@ -1,0 +1,41 @@
+[package]
+name = "obfswire"
+version = "0.0.0"
+edition = "2021"
+authors = ["Brainmaker"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Brainmaker/Obfswire"
+description = """
+A library for obfuscating network traffic, designed to resist deep packet
+inspection (DPI) and active probing of network endpoints.
+"""
+keywords = ["network", "networking", "protocol", "cryptography", "proxy"]
+categories = ["network-programming"]
+readme = "README.md"
+
+[dependencies]
+# Core dependencies
+blake3 = "1"
+rand = { version = "0.9", default-features = false, features = ["os_rng", "std_rng"] }
+ring = { version = "0.17", default-features = false }
+zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
+
+# Optional feature `tokio-stream-impl` dependencies:
+pin-project-lite = { version = "0.2", optional = true }
+tokio = { version = "1", features = ["time", "rt"], optional = true }
+
+[features]
+tokio-stream-impl = ["dep:pin-project-lite", "dep:tokio"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[workspace]
+members = [
+    ".",
+    "examples"
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
