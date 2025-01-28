@@ -25,10 +25,10 @@ jobs:
           toolchain: ${{ env.rust_stable }}
 
       - name: cargo build (debug; all features)
-        run: cargo build --locked --all-features
+        run: cargo build --all-features
 
       - name: cargo test (debug; all features)
-        run: cargo test --locked --all-features
+        run: cargo test --all-features
         env:
           RUST_BACKTRACE: 1
 
