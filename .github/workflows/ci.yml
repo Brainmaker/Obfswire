@@ -16,8 +16,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Print workflow file
-        run: cat .github/workflows/ci.yml
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -27,6 +25,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.rust_stable }}
+
+      - name: Print workflow file
+        run: cat .github/workflows/ci.yml
 
       - name: Clear cargo cache
         run: cargo clean
