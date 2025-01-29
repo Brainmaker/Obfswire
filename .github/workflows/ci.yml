@@ -56,6 +56,16 @@ jobs:
           files: lcov.info
           fail_ci_if_error: true
 
+  semver:
+    name: Check semver compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Check semver
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+
   doc:
     runs-on: ubuntu-latest
     steps:
