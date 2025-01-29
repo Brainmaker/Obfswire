@@ -41,7 +41,7 @@ pin_project! {
         read_state: ReadState,
         write_state: WriteState,
         detected_error: Option<BadDataReceived>,
-        is_shutdown: Arc<AtomicBool>,
+        is_shutdown_by_err: Arc<AtomicBool>,
         rng: StdRng,
         max_delay_before_shutdown_in_millis: u64,
     }
@@ -50,19 +50,21 @@ pin_project! {
 /// State Transition Diagram
 /// ```text
 ///
-///      |
-///      V
-///     Read <------+
-///      |          |
-///      V          |
-///     WaitData ---+
-///
+///          |
+///          V
+///   +---- Read <------+
+///   |      |          |
+///   |      V          |
+///   |     WaitData ---+
+///   |  
+///   +--> DecoyMode
 ///
 /// ```
 #[derive(Copy, Clone, Debug)]
 enum ReadState {
     Read,
     WaitData,
+    DecoyMode,
 }
 
 /// State Transition Diagram
@@ -121,7 +123,7 @@ impl<IO> ObfuscatedStream<IO> {
             ),
             detected_error: None,
             max_delay_before_shutdown_in_millis: 5000,
-            is_shutdown: Arc::new(AtomicBool::new(false)),
+            is_shutdown_by_err: Arc::new(AtomicBool::new(false)),
             rng: {
                 let seed = u64::from_le_bytes(random[136..].try_into().unwrap());
                 StdRng::seed_from_u64(seed)
@@ -176,13 +178,16 @@ where
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
-        if self.is_shutdown.load(Ordering::Acquire) {
-            if let Some(e) = &self.detected_error {
-                return Poll::Ready(Err(Error::BadDataReceived(e.clone()).into()));
-            }
-        }
         let mut me = self.project();
         loop {
+            if me.is_shutdown_by_err.load(Ordering::Acquire) {
+                return if let Some(reason) = &me.detected_error {
+                    Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
+                } else {
+                    // This branch is never reached.
+                    Poll::Ready(Err(ErrorKind::InvalidData.into()))
+                };
+            }
             match *me.read_state {
                 ReadState::Read => {
                     let mut reader = SyncReadAdapter {
@@ -190,27 +195,16 @@ where
                         cx,
                     };
                     match me.obfuscator.read_wire(&mut reader) {
-                        // normal read, continue to read data.
-                        Ok(n) if n > 0 => {
-                            // Has entered decoy mode
-                            if let Some(e) = me.detected_error {
-                                return Poll::Ready(Err(e.clone().into()));
-                            }
-                            *me.read_state = ReadState::WaitData;
-                        }
+                        // Read successfully, deliver the buffered data to the caller.
+                        Ok(n) if n > 0 => *me.read_state = ReadState::WaitData,
 
-                        // reached EOF.
-                        Ok(_) => {
-                            return Poll::Ready(Ok(()));
-                        }
+                        // Reached EOF.
+                        Ok(_) => return Poll::Ready(Ok(())),
 
-                        // pending, wait for more data.
-                        Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                            return Poll::Pending;
-                        }
+                        // Wait for more data, pending.
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => return Poll::Pending,
 
                         // Data corruption, close connection after random delay.
-                        // (while reading random amounts of bytes)
                         Err(e) if e.kind() == ErrorKind::Other => {
                             match e.get_ref().and_then(|e| e.downcast_ref::<Error>()) {
                                 Some(Error::BadDataReceived(reason)) => {
@@ -226,15 +220,16 @@ where
 
                                     let max_delay = *me.max_delay_before_shutdown_in_millis;
                                     let delay_before_shutdown = me.rng.random_range(0..=max_delay);
-                                    let is_shutdown = me.is_shutdown.clone();
+                                    let is_shutdown_by_err = me.is_shutdown_by_err.clone();
+
                                     // start a timer.
                                     spawn(async move {
                                         sleep(Duration::from_millis(delay_before_shutdown)).await;
-                                        is_shutdown.store(true, Ordering::Release);
+                                        is_shutdown_by_err.store(true, Ordering::Release);
                                     });
 
-                                    // continue "fake reading"
-                                    *me.read_state = ReadState::Read;
+                                    // Into decoy mode, continue "fake reading".
+                                    *me.read_state = ReadState::DecoyMode;
                                 }
                                 _ => return Poll::Ready(Err(e)),
                             }
@@ -258,6 +253,25 @@ where
                         Err(e) => return Poll::Ready(Err(e)),
                     };
                 }
+                ReadState::DecoyMode => {
+                    let mut reader = SyncReadAdapter {
+                        io: &mut me.stream,
+                        cx,
+                    };
+                    match me.obfuscator.read_wire(&mut reader) {
+                        // Read successfully, decoy mode completes, connection closed
+                        Ok(n) if n > 0 => me.is_shutdown_by_err.store(true, Ordering::Release),
+
+                        // reached EOF.
+                        Ok(_) => return Poll::Ready(Ok(())),
+
+                        // pending, wait for more data.
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => return Poll::Pending,
+
+                        // general I/O error.
+                        Err(e) => return Poll::Ready(Err(e)),
+                    }
+                }
             }
         }
     }
@@ -274,6 +288,16 @@ where
     ) -> Poll<Result<usize, std::io::Error>> {
         let mut me = self.project();
         loop {
+            // If an error occurs on the read side,
+            // stop the upper-layer application from continuing to write data
+            if me.is_shutdown_by_err.load(Ordering::Acquire) {
+                return if let Some(reason) = &me.detected_error {
+                    Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
+                } else {
+                    // This branch is never reached.
+                    Poll::Ready(Err(ErrorKind::InvalidData.into()))
+                };
+            }
             match me.write_state {
                 WriteState::WaitData => match me.obfuscator.writer().write(buf) {
                     Ok(written) => {
@@ -309,6 +333,16 @@ where
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         let mut me = self.project();
+        // If an error occurs on the read side,
+        // stop the upper-layer application from continuing to write data
+        if me.is_shutdown_by_err.load(Ordering::Acquire) {
+            return if let Some(reason) = &me.detected_error {
+                Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
+            } else {
+                // This branch is never reached.
+                Poll::Ready(Err(ErrorKind::InvalidData.into()))
+            };
+        }
         match me.write_state {
             WriteState::WaitData => Poll::Ready(Ok(())),
             WriteState::Write { .. } => {
