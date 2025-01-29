@@ -110,9 +110,7 @@ mod test {
         );
         assert_eq!(
             cache.0.lock().unwrap().salts.clone(),
-            HashSet::from_iter(vec![
-                [0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32],
-            ])
+            HashSet::from_iter(vec![[0u8; 32], [1u8; 32], [2u8; 32], [3u8; 32], [4u8; 32],])
         );
 
         let t5 = 1000 + TIME_TORLERANCE + 2;
@@ -170,9 +168,7 @@ mod test {
         );
         assert_eq!(
             cache.0.lock().unwrap().salts.clone(),
-            HashSet::from_iter(vec![
-                [3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],
-            ])
+            HashSet::from_iter(vec![[3u8; 32], [4u8; 32], [5u8; 32], [6u8; 32], [7u8; 32],])
         );
     }
 }
