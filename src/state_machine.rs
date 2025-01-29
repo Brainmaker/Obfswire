@@ -1447,10 +1447,10 @@ mod test {
 
         client.write_wire(&mut mock_stream).unwrap();
         server.read_wire(&mut mock_stream).unwrap();
-        
+
         assert!(server.update_key_with_notif([1u8; 32]).is_ok());
         assert!(client.update_key_with_notif([1u8; 32]).is_ok());
-        
+
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
 
