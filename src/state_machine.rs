@@ -59,6 +59,7 @@ pub struct Obfuscator {
     receiver: Receiver,
     sender: Sender,
     stream_id: u64,
+    is_key_updating: bool,
 }
 
 impl Obfuscator {
@@ -113,6 +114,7 @@ impl Obfuscator {
                 StdRng::from_seed(random[96..128].try_into().unwrap()),
             ),
             stream_id: u64::from_le_bytes(random[128..].try_into().unwrap()),
+            is_key_updating: false,
         }
     }
 
@@ -337,6 +339,9 @@ impl Obfuscator {
     /// (e.g., the underlying I/O is blocking), this method will return
     /// an I/O error with `ErrorKind::WouldBlock`.
     pub fn update_key(&mut self, key_material: [u8; 32]) -> io::Result<()> {
+        if self.is_key_updating {
+            return Err(ErrorKind::WouldBlock.into());
+        }
         let not_receving = !matches!(
             self.read_state,
             ReadState::Receive | ReadState::InitialReceive
@@ -383,6 +388,10 @@ impl Obfuscator {
     /// R/W: Represents a successful read_wire/write_wire operation
     /// ```
     pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) {
+        if self.is_key_updating {
+            return;
+        }
+        self.is_key_updating = true;
         self.receiver.ready_for_update_key_notif(key_material);
         self.sender.update_key_with_notif(key_material);
     }
@@ -1428,6 +1437,9 @@ mod test {
 
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
+
+        server.update_key_with_notif([3u8; 32]);
+        client.update_key_with_notif([3u8; 32]);
 
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
