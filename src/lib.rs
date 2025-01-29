@@ -134,7 +134,7 @@ static REPLAY_CACHE: LazyLock<ReplayCache> = LazyLock::new(|| ReplayCache::with_
 mod test {
     use std::io::{self, ErrorKind, Read, Write};
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug, Eq, PartialEq)]
     pub(crate) struct MockStream {
         pub(crate) buf: Vec<u8>,
         pub(crate) eof: bool,
