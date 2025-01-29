@@ -134,11 +134,8 @@ static REPLAY_CACHE: LazyLock<ReplayCache> = LazyLock::new(|| ReplayCache::with_
 mod test {
     use std::{
         io::{self, ErrorKind, Read, Write},
-        pin::Pin,
-        task::{Context, Poll}
     };
     
-    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub(crate) struct MockStream {
@@ -193,76 +190,6 @@ mod test {
 
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
-        }
-    }
-
-    #[derive(Clone, Debug, Eq, PartialEq)]
-    pub(crate) struct MockStreamAsync {
-        pub(crate) buf: Vec<u8>,
-        pub(crate) eof: bool,
-    }
-
-    impl MockStreamAsync {
-        #[allow(unused)]
-        pub(crate) fn set_eof(&mut self) {
-            self.buf.clear();
-            self.eof = true;
-        }
-
-        #[allow(unused)]
-        pub(crate) fn clear(&mut self) {
-            self.buf.clear();
-            self.eof = false;
-        }
-    }
-
-    impl Default for MockStreamAsync {
-        fn default() -> Self {
-            Self {
-                buf: Vec::with_capacity(65536),
-                eof: false,
-            }
-        }
-    }
-
-    impl AsyncRead for MockStreamAsync {
-        fn poll_read(
-            mut self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            buf: &mut ReadBuf<'_>,
-        ) -> Poll<io::Result<()>> {
-            if self.eof {
-                return Poll::Ready(Ok(()));
-            }
-            if self.buf.is_empty() {
-                return Poll::Pending;
-            }
-            let n = core::cmp::min(buf.remaining(), self.buf.len());
-            buf.put_slice(&self.buf[..n]);
-            self.buf = self.buf.split_off(n);
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl AsyncWrite for MockStreamAsync {
-        fn poll_write(
-            mut self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            if self.eof {
-                return Poll::Ready(Ok(0));
-            }
-            self.buf.extend_from_slice(buf);
-            Poll::Ready(Ok(buf.len()))
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-            Poll::Ready(Ok(()))
         }
     }
 }
