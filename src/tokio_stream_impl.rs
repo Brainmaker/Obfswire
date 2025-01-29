@@ -5,8 +5,8 @@ use core::{
 use std::{
     io::{ErrorKind, Read, Write},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -40,8 +40,7 @@ pin_project! {
         obfuscator: Obfuscator,
         read_state: ReadState,
         write_state: WriteState,
-        detected_error: Option<BadDataReceived>,
-        is_shutdown_by_err: Arc<AtomicBool>,
+        shutdown: ShutdownByErrorState,
         rng: StdRng,
         max_delay_before_shutdown_in_millis: u64,
     }
@@ -83,7 +82,10 @@ enum WriteState {
     Write { written: usize },
 }
 
-impl<IO> ObfuscatedStream<IO> {
+impl<IO> ObfuscatedStream<IO>
+where
+    IO: AsyncRead + AsyncWrite + Unpin,
+{
     /// Creates a new [`ObfuscatedStream`] instance from the underlying `stream`
     /// and the given `config`.
     ///
@@ -121,9 +123,8 @@ impl<IO> ObfuscatedStream<IO> {
                 config,
                 random[..136].try_into().unwrap(),
             ),
-            detected_error: None,
+            shutdown: ShutdownByErrorState::default(),
             max_delay_before_shutdown_in_millis: 5000,
-            is_shutdown_by_err: Arc::new(AtomicBool::new(false)),
             rng: {
                 let seed = u64::from_le_bytes(random[136..].try_into().unwrap());
                 StdRng::seed_from_u64(seed)
@@ -180,14 +181,7 @@ where
     ) -> Poll<std::io::Result<()>> {
         let mut me = self.project();
         loop {
-            if me.is_shutdown_by_err.load(Ordering::Acquire) {
-                return if let Some(reason) = &me.detected_error {
-                    Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
-                } else {
-                    // This branch is never reached.
-                    Poll::Ready(Err(ErrorKind::InvalidData.into()))
-                };
-            }
+            me.shutdown.ok_or_shutdown_by_err()?;
             match *me.read_state {
                 ReadState::Read => {
                     let mut reader = SyncReadAdapter {
@@ -212,20 +206,20 @@ where
                                     // it will not return the same value again.
                                     // But for the sake of robustness, we still
                                     // check whether the error has been detected here.
-                                    if me.detected_error.is_some() {
+                                    if me.shutdown.detected_error.is_some() {
                                         return Poll::Ready(Err(e));
                                     }
 
-                                    *me.detected_error = Some(reason.clone());
+                                    me.shutdown.detected_error = Some(reason.clone());
 
                                     let max_delay = *me.max_delay_before_shutdown_in_millis;
                                     let delay_before_shutdown = me.rng.random_range(0..=max_delay);
-                                    let is_shutdown_by_err = me.is_shutdown_by_err.clone();
+                                    let is_shutdown = me.shutdown.is_shutdown.clone();
 
                                     // start a timer.
                                     spawn(async move {
                                         sleep(Duration::from_millis(delay_before_shutdown)).await;
-                                        is_shutdown_by_err.store(true, Ordering::Release);
+                                        is_shutdown.store(true, Ordering::Release);
                                     });
 
                                     // Into decoy mode, continue "fake reading".
@@ -260,7 +254,7 @@ where
                     };
                     match me.obfuscator.read_wire(&mut reader) {
                         // Read successfully, decoy mode completes, connection closed
-                        Ok(n) if n > 0 => me.is_shutdown_by_err.store(true, Ordering::Release),
+                        Ok(n) if n > 0 => me.shutdown.is_shutdown.store(true, Ordering::Release),
 
                         // reached EOF.
                         Ok(_) => return Poll::Ready(Ok(())),
@@ -288,16 +282,7 @@ where
     ) -> Poll<Result<usize, std::io::Error>> {
         let mut me = self.project();
         loop {
-            // If an error occurs on the read side,
-            // stop the upper-layer application from continuing to write data
-            if me.is_shutdown_by_err.load(Ordering::Acquire) {
-                return if let Some(reason) = &me.detected_error {
-                    Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
-                } else {
-                    // This branch is never reached.
-                    Poll::Ready(Err(ErrorKind::InvalidData.into()))
-                };
-            }
+            me.shutdown.ok_or_shutdown_by_err()?;
             match me.write_state {
                 WriteState::WaitData => match me.obfuscator.writer().write(buf) {
                     Ok(written) => {
@@ -333,16 +318,7 @@ where
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         let mut me = self.project();
-        // If an error occurs on the read side,
-        // stop the upper-layer application from continuing to write data
-        if me.is_shutdown_by_err.load(Ordering::Acquire) {
-            return if let Some(reason) = &me.detected_error {
-                Poll::Ready(Err(Error::BadDataReceived(reason.clone()).into()))
-            } else {
-                // This branch is never reached.
-                Poll::Ready(Err(ErrorKind::InvalidData.into()))
-            };
-        }
+        me.shutdown.ok_or_shutdown_by_err()?;
         match me.write_state {
             WriteState::WaitData => Poll::Ready(Ok(())),
             WriteState::Write { .. } => {
@@ -369,6 +345,28 @@ where
     ) -> Poll<Result<(), std::io::Error>> {
         ready!(self.as_mut().poll_flush(cx))?;
         Pin::new(&mut self.stream).poll_shutdown(cx)
+    }
+}
+
+#[derive(Debug, Default)]
+struct ShutdownByErrorState {
+    is_shutdown: Arc<AtomicBool>,
+    detected_error: Option<BadDataReceived>,
+}
+
+impl ShutdownByErrorState {
+    /// If an error occurs on the read side, stop the upper-layer I/O.
+    fn ok_or_shutdown_by_err(&self) -> std::io::Result<()> {
+        if self.is_shutdown.load(Ordering::Acquire) {
+            if let Some(reason) = &self.detected_error {
+                Err(Error::BadDataReceived(reason.clone()).into())
+            } else {
+                // This branch is never reached.
+                Err(ErrorKind::InvalidData.into())
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 
