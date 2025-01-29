@@ -181,3 +181,53 @@ pub(crate) enum EndpointType {
     Server,
     Undetermined,
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_config_builder() {
+        let shared_key = SharedKey::from_entropy();
+
+        {
+            let config = Config::builder_with_shared_key(shared_key.clone())
+                .with_default_cipher_and_tcp_padding();
+            assert_eq!(config.shared_key, shared_key);
+            assert_eq!(config.cipher_kind, CipherKind::default());
+            assert_eq!(config.pad_option, PadOption::default_tcp_padding());
+        }
+        {
+            let config = Config::builder_with_shared_key(shared_key.clone())
+                .with_cipher_kind(CipherKind::Aes256Gcm)
+                .with_padding_in_link_mpu(2000);
+            assert_eq!(config.shared_key, shared_key);
+            assert_eq!(config.cipher_kind, CipherKind::Aes256Gcm);
+            assert_eq!(config.pad_option, PadOption::UniformTail { link_mpu: 2000 });
+        }
+        {
+            let config = Config::builder_with_shared_key(shared_key.clone())
+                .with_cipher_kind(CipherKind::Aes256Gcm)
+                .with_default_tcp_padding();
+            assert_eq!(config.shared_key, shared_key);
+            assert_eq!(config.cipher_kind, CipherKind::Aes256Gcm);
+            assert_eq!(config.pad_option, PadOption::default_tcp_padding());
+        }
+        {
+            let config = Config::builder_with_shared_key(shared_key.clone())
+                .with_cipher_kind(CipherKind::Aes256Gcm)
+                .no_padding();
+            assert_eq!(config.shared_key, shared_key);
+            assert_eq!(config.cipher_kind, CipherKind::Aes256Gcm);
+            assert_eq!(config.pad_option, PadOption::None);
+        }
+        {
+            let config = Config::builder_with_shared_key(shared_key.clone())
+                .with_default_cipher()
+                .with_padding_in_link_mpu(1448);
+            assert_eq!(config.shared_key, shared_key);
+            assert_eq!(config.cipher_kind, CipherKind::default());
+            assert_eq!(config.pad_option, PadOption::UniformTail { link_mpu: 1448 });
+        }
+    }
+}
