@@ -59,7 +59,6 @@ pub struct Obfuscator {
     receiver: Receiver,
     sender: Sender,
     stream_id: u64,
-    is_key_updating: bool,
 }
 
 impl Obfuscator {
@@ -114,7 +113,6 @@ impl Obfuscator {
                 StdRng::from_seed(random[96..128].try_into().unwrap()),
             ),
             stream_id: u64::from_le_bytes(random[128..].try_into().unwrap()),
-            is_key_updating: false,
         }
     }
 
@@ -338,8 +336,12 @@ impl Obfuscator {
     /// If this method is called before successfully reading or writing data
     /// (e.g., the underlying I/O is blocking), this method will return
     /// an I/O error with `ErrorKind::WouldBlock`.
+    ///
+    /// If the key update process initiated by `update_key_with_notif` has not
+    /// completed, this method will return an I/O error with
+    /// `ErrorKind::WouldBlock`.
     pub fn update_key(&mut self, key_material: [u8; 32]) -> io::Result<()> {
-        if self.is_key_updating {
+        if self.receiver.is_updating_key() && self.sender.is_updating_key() {
             return Err(ErrorKind::WouldBlock.into());
         }
         let not_receving = !matches!(
@@ -387,13 +389,19 @@ impl Obfuscator {
     ///
     /// R/W: Represents a successful read_wire/write_wire operation
     /// ```
-    pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) {
-        if self.is_key_updating {
-            return;
+    ///
+    /// # Error
+    ///
+    /// If the key update process initiated by `update_key_with_notif` has not
+    /// completed, this method will return an I/O error with
+    /// `ErrorKind::WouldBlock`.
+    pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) -> io::Result<()> {
+        if self.receiver.is_updating_key() && self.sender.is_updating_key() {
+            return Err(ErrorKind::WouldBlock.into());
         }
-        self.is_key_updating = true;
         self.receiver.ready_for_update_key_notif(key_material);
         self.sender.update_key_with_notif(key_material);
+        Ok(())
     }
 
     /// Returns a [`Reader`] that allows reading plaintext
@@ -878,6 +886,10 @@ impl Receiver {
         self.decoder.update_key_by_material(key_material);
     }
 
+    fn is_updating_key(&self) -> bool {
+        !matches!(self.key_state, ReceiverKeyState::None) || self.key_material.is_some()
+    }
+
     fn read_wire(&mut self, reader: &mut dyn Read) -> io::Result<usize> {
         loop {
             match self.state {
@@ -1124,6 +1136,10 @@ impl Sender {
 
     fn update_key(&mut self, key_material: [u8; 32]) {
         self.encoder.update_key_by_material(key_material);
+    }
+
+    fn is_updating_key(&self) -> bool {
+        !matches!(self.key_state, SenderKeyState::None)
     }
 
     fn write_wire(&mut self, writer: &mut dyn Write) -> io::Result<usize> {
@@ -1431,23 +1447,23 @@ mod test {
 
         client.write_wire(&mut mock_stream).unwrap();
         server.read_wire(&mut mock_stream).unwrap();
-
-        server.update_key_with_notif([1u8; 32]);
-        client.update_key_with_notif([1u8; 32]);
-
+        
+        assert!(server.update_key_with_notif([1u8; 32]).is_ok());
+        assert!(client.update_key_with_notif([1u8; 32]).is_ok());
+        
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
 
-        server.update_key_with_notif([3u8; 32]);
-        client.update_key_with_notif([3u8; 32]);
+        assert!(server.update_key_with_notif([2u8; 32]).is_err());
+        assert!(client.update_key_with_notif([2u8; 32]).is_err());
 
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
         client.read_wire(&mut mock_stream).unwrap();
 
-        server.update_key_with_notif([2u8; 32]);
-        client.update_key_with_notif([2u8; 32]);
+        assert!(server.update_key_with_notif([3u8; 32]).is_ok());
+        assert!(client.update_key_with_notif([3u8; 32]).is_ok());
 
         server.write_wire(&mut mock_stream).unwrap();
         server.write_wire(&mut mock_stream).unwrap();
