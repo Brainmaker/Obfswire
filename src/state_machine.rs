@@ -1682,8 +1682,116 @@ mod test {
     }
 
     #[test]
-    fn test_pipe_replay_on_client() {}
+    fn test_client_self_replay() {
+        let mut mock_stream = MockStream::default();
+        let mut client = Obfuscator::with_config(cfg_tcp_pad());
+
+        client.write_wire(&mut mock_stream).unwrap();
+
+        // Replay on self.
+        let err = client.read_wire(&mut mock_stream).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = err.downcast::<Error>().unwrap();
+        assert!(matches!(
+            err,
+            Error::BadDataReceived(BadDataReceived::UnmatchedDirection)
+        ));
+    }
 
     #[test]
-    fn test_pipe_replay_on_server() {}
+    fn test_client_each_other_replay() {
+        let mut mock_stream1 = MockStream::default();
+        let mut client1 = Obfuscator::with_config(cfg_tcp_pad());
+
+        let mut mock_stream2 = MockStream::default();
+        let mut client2 = Obfuscator::with_config(cfg_tcp_pad());
+
+        client1.write_wire(&mut mock_stream1).unwrap();
+        client2.write_wire(&mut mock_stream2).unwrap();
+
+        // Replay on self.
+        let err = client1.read_wire(&mut mock_stream2).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = err.downcast::<Error>().unwrap();
+        assert!(matches!(
+            err,
+            Error::BadDataReceived(BadDataReceived::UnmatchedDirection)
+        ));
+    }
+
+    #[test]
+    fn test_client_replay_to_server() {
+        let mut mock_stream1 = MockStream::default();
+        let mut client = Obfuscator::with_config(cfg_tcp_pad());
+
+        let mut server1 = Obfuscator::with_config(cfg_tcp_pad());
+        let mut server2 = Obfuscator::with_config(cfg_tcp_pad());
+
+        client.write_wire(&mut mock_stream1).unwrap();
+
+        // Copy client request.
+        let mut mock_stream2 = mock_stream1.clone();
+
+        // Ok
+        server1.read_wire(&mut mock_stream1).unwrap();
+
+        // Server 2 detected replay,
+        // because server 2 shares the same replay cache with server 1.
+        let err = server2.read_wire(&mut mock_stream2).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = err.downcast::<Error>().unwrap();
+        dbg!(&err);
+        assert!(matches!(
+            err,
+            Error::BadDataReceived(BadDataReceived::ReusedSalt)
+        ));
+    }
+
+    #[test]
+    fn test_server_replay_to_server() {
+        let mut mock_stream1 = MockStream::default();
+        let mut client = Obfuscator::with_config(cfg_tcp_pad());
+        let mut server1 = Obfuscator::with_config(cfg_tcp_pad());
+        let mut server2 = Obfuscator::with_config(cfg_tcp_pad());
+
+        client.write_wire(&mut mock_stream1).unwrap();
+        server1.read_wire(&mut mock_stream1).unwrap();
+        server1.write_wire(&mut mock_stream1).unwrap();
+        let err = server2.read_wire(&mut mock_stream1).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = err.downcast::<Error>().unwrap();
+        dbg!(&err);
+        assert!(matches!(
+            err,
+            Error::BadDataReceived(BadDataReceived::UnmatchedDirection)
+        ));
+    }
+
+    #[test]
+    fn test_client_cross_replay_to_client() {
+        let mut mock_stream1 = MockStream::default();
+        let mut mock_stream2 = MockStream::default();
+        let mut client1 = Obfuscator::with_config(cfg_tcp_pad());
+        let mut client2 = Obfuscator::with_config(cfg_tcp_pad());
+        let mut server1 = Obfuscator::with_config(cfg_tcp_pad());
+        let mut server2 = Obfuscator::with_config(cfg_tcp_pad());
+
+        client1.write_wire(&mut mock_stream1).unwrap();
+        server1.read_wire(&mut mock_stream1).unwrap();
+        server1.write_wire(&mut mock_stream1).unwrap();
+
+        client2.write_wire(&mut mock_stream2).unwrap();
+        server2.read_wire(&mut mock_stream2).unwrap();
+        server2.write_wire(&mut mock_stream2).unwrap();
+
+        // Cross replay
+        let err = client1.read_wire(&mut mock_stream2).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Other);
+        let err = err.downcast::<Error>().unwrap();
+        dbg!(&err);
+        assert!(matches!(
+            err,
+            Error::BadDataReceived(BadDataReceived::UnmatchedClientStreamId { .. })
+        ));
+    }
 }
