@@ -19,11 +19,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Rust ${{ env.rust_stable }}
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.rust_stable }}
-          components: rustfmt clippy
 
       - name: cargo build (debug; all features)
         run: cargo build --all-features
@@ -33,12 +30,6 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
-      - name: cargo clippy (all targets)
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: cargo fmt (check)
-        run: cargo fmt -- --check
-
   coverage:
     runs-on: ubuntu-latest
     env:
@@ -47,10 +38,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install rust ${{ env.rust_stable }}
+      - name: Install rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.rust_stable }}
           components: llvm-tools
 
       - name: Install cargo-llvm-cov
@@ -65,3 +55,45 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: true
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: cargo doc (all features)
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings --cfg docsrs
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Clippy lints
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Install rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
