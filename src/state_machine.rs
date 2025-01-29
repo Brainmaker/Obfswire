@@ -1154,26 +1154,6 @@ impl Sender {
     }
 }
 
-impl Write for Sender {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if let FrameWriteState::Wait = self.state {
-            let remaining = self.buf.remaining();
-            if remaining == 0 {
-                return Err(ErrorKind::WouldBlock.into());
-            }
-            let k = std::cmp::min(buf.len(), remaining);
-            self.buf.push_payload(&buf[..k]);
-            Ok(k)
-        } else {
-            Err(ErrorKind::WouldBlock.into())
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 enum FrameWriteState {
     Wait,
