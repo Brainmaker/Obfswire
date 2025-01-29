@@ -56,8 +56,8 @@ pub enum Error {
 #[non_exhaustive]
 pub enum BadDataReceived {
     /// The timestamp of the connection request is within the allowed range,
-    /// but the nonce was reused.
-    ReusedNonce,
+    /// but the salt was reused.
+    ReusedSalt,
 
     /// The timestamp of the connection request is outside the allowed
     /// range of the protocol.
@@ -181,7 +181,7 @@ impl Display for Error {
 impl Display for BadDataReceived {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            BadDataReceived::ReusedNonce => write!(f, "ReusedNonce"),
+            BadDataReceived::ReusedSalt => write!(f, "ReusedSalt"),
             BadDataReceived::UnmatchedDirection => write!(f, "UnmatchedDirection"),
             BadDataReceived::UnmatchedClientStreamId { received } => {
                 write!(f, "InvalidStreamId: received {:?}", received)
@@ -237,7 +237,7 @@ impl Display for PeerMisbehaved {
 impl Display for Retryable {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
-            Retryable::KeyMaterialRequired => write!(f, "KeySyncRequired"),
+            Retryable::KeyMaterialRequired => write!(f, "KeyMaterialRequired"),
         }
     }
 }

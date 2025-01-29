@@ -54,7 +54,7 @@ impl ReplayCache {
         let mut inner = self.0.lock().unwrap();
 
         if inner.salts.contains(&salt) {
-            return Err(BadDataReceived::ReusedNonce.into());
+            return Err(BadDataReceived::ReusedSalt.into());
         }
 
         inner.salts.insert(salt);
