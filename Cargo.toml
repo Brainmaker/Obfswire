@@ -1,6 +1,6 @@
 [package]
 name = "obfswire"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 authors = ["Brainmaker"]
 license = "MIT OR Apache-2.0"
