@@ -162,8 +162,8 @@ impl<IO> ObfuscatedStream<IO> {
     /// This function performs the same operation as
     /// [`Obfuscator::update_key_with_notif`].
     /// For more details, refer to the documentation of that function.
-    pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) {
-        self.obfuscator.update_key_with_notif(key_material);
+    pub fn update_key_with_notif(&mut self, key_material: [u8; 32]) -> std::io::Result<()> {
+        self.obfuscator.update_key_with_notif(key_material)
     }
 }
 
