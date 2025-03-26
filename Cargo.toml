@@ -1,6 +1,6 @@
 [package]
 name = "obfswire"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 authors = ["Brainmaker"]
 license = "MIT OR Apache-2.0"
@@ -18,7 +18,7 @@ readme = "README.md"
 # Core dependencies
 aws-lc-rs = { version = "1.12", default-features = false, features = ["aws-lc-sys", "prebuilt-nasm"] }
 blake3 = "1"
-rand = { version = "0.9", default-features = false, features = ["os_rng", "std_rng"] }
+rand = { version = "0.9", default-features = false, features = ["os_rng", "std", "std_rng"] }
 zeroize = { version = "1", default-features = false }
 
 # Optional feature `tokio-stream-impl` dependencies:
