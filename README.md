@@ -1,7 +1,7 @@
 # Obfswire
 
 [![Build Status](https://github.com/Brainmaker/Obfswire/actions/workflows/ci.yml/badge.svg)](https://github.com/Brainmaker/Obfswire/actions/workflows/ci.yml)
-![docs.rs](https://img.shields.io/docsrs/obfswire)
+[![docs.rs](https://img.shields.io/docsrs/obfswire)](https://docs.rs/obfswire/latest/obfswire/)
 [![codecov](https://codecov.io/github/Brainmaker/Obfswire/graph/badge.svg?token=WVLFE0TA33)](https://codecov.io/github/Brainmaker/Obfswire)
 ![License: MIT or Apache 2.0](https://img.shields.io/badge/license-MIT%20or%20Apache%202.0-blue)
 
