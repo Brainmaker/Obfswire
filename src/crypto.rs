@@ -43,7 +43,7 @@ pub enum CipherKind {
 ///
 /// It is strongly recommended to use a secure entropy source to generate the
 /// shared key, such as [`SharedKey::from_entropy`].
-#[derive(Clone, Eq, PartialEq, Hash, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct SharedKey([u8; 32]);
 
 impl SharedKey {
@@ -85,8 +85,22 @@ impl Debug for SharedKey {
     }
 }
 
+impl Drop for SharedKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl Zeroize for SharedKey {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for SharedKey {}
+
 /// A 256-bit key used for a single session.
-#[derive(Clone, Eq, PartialEq, Hash, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub(crate) struct SessionKey([u8; 32]);
 
 impl SessionKey {
@@ -129,7 +143,21 @@ impl Debug for SessionKey {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Zeroize, ZeroizeOnDrop)]
+impl Drop for SessionKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl Zeroize for SessionKey {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for SessionKey {}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub(crate) struct InitKey([u8; 32]);
 
 impl InitKey {
@@ -158,6 +186,20 @@ impl Debug for InitKey {
         f.debug_tuple("InitKey").field(&"*****").finish()
     }
 }
+
+impl Drop for InitKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl Zeroize for InitKey {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for InitKey {}
 
 #[derive(Debug)]
 pub(crate) struct SessionCipher {

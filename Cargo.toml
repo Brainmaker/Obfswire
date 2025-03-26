@@ -19,7 +19,7 @@ readme = "README.md"
 aws-lc-rs = { version = "1.12", default-features = false, features = ["aws-lc-sys", "prebuilt-nasm"] }
 blake3 = "1"
 rand = { version = "0.9", default-features = false, features = ["os_rng", "std_rng"] }
-zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
+zeroize = { version = "1", default-features = false }
 
 # Optional feature `tokio-stream-impl` dependencies:
 pin-project-lite = { version = "0.2", optional = true }
