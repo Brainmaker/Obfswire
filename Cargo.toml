@@ -1,7 +1,7 @@
 [package]
 name = "obfswire"
 version = "0.0.3"
-edition = "2021"
+edition = "2024"
 authors = ["Brainmaker"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Brainmaker/Obfswire"
