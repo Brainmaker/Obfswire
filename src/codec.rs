@@ -52,15 +52,13 @@ impl InitFrameDecoder {
             return Err(BadDataReceived::InitFrameHeaderFailed.into());
         }
 
-        // buf[32..48] is the authentication tag.
-
         // Check whether the command field is reserved (0x00).
-        if buf[48] != 0 {
-            return Err(PeerMisbehaved::InvalidCommand { received: buf[48] }.into());
+        if buf[32] != 0 {
+            return Err(PeerMisbehaved::InvalidCommand { received: buf[32] }.into());
         }
 
         // Check whether the flow direction field is valid.
-        let direction = Direction::try_from(buf[49])?;
+        let direction = Direction::try_from(buf[33])?;
         match direction {
             Direction::ClientToServer => {
                 // Received a client-to-server stream, but the endpoint is not a server.
@@ -77,11 +75,11 @@ impl InitFrameDecoder {
         }
 
         // Take out the stream_id.
-        let stream_id = u64::from_be_bytes(buf[50..58].try_into().unwrap());
+        let stream_id = u64::from_be_bytes(buf[34..42].try_into().unwrap());
 
         // Check if the timestamp is within the accepted range.
         // Both the client and the server will perform this check.
-        let timestamp = u64::from_be_bytes(buf[58..66].try_into().unwrap());
+        let timestamp = u64::from_be_bytes(buf[42..50].try_into().unwrap());
         let now = current_timestamp_with_granularity();
         if now.abs_diff(timestamp) > TIME_TORLERANCE {
             return Err(BadDataReceived::ExpiredTimestamp {
@@ -111,7 +109,7 @@ impl InitFrameDecoder {
         }
 
         // Check the length of the initial frame body.
-        let body_len = u16::from_be_bytes(buf[66..68].try_into().unwrap()) as usize;
+        let body_len = u16::from_be_bytes(buf[50..52].try_into().unwrap()) as usize;
         if !(INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN).contains(&body_len) {
             return Err(PeerMisbehaved::InitFrameBodyLenInvalid {
                 received: body_len as u16,
@@ -120,7 +118,7 @@ impl InitFrameDecoder {
         }
 
         // Check the length of the initial frame payload (if any).
-        let payload_len = u16::from_be_bytes(buf[68..70].try_into().unwrap()) as usize;
+        let payload_len = u16::from_be_bytes(buf[52..54].try_into().unwrap()) as usize;
         if !(INIT_PAYLOAD_MIN_LEN..=(body_len - INIT_TAG_LEN)).contains(&payload_len) {
             return Err(PeerMisbehaved::InitPayloadLenInvalid {
                 received: payload_len as u16,
@@ -189,14 +187,13 @@ impl InitFrameEncoder {
         let body_len = buf.body_len();
         let payload_len = buf.payload_len();
         buf.header_mut()[0..32].copy_from_slice(&salt);
-        buf.header_mut()[32..48].copy_from_slice(&[0u8; INIT_TAG_LEN]);
-        buf.header_mut()[48] = 0x00;
-        buf.header_mut()[49] = direction.into();
-        buf.header_mut()[50..58].copy_from_slice(&self.stream_id.to_be_bytes());
-        buf.header_mut()[58..66]
+        buf.header_mut()[32] = 0x00;
+        buf.header_mut()[33] = direction.into();
+        buf.header_mut()[34..42].copy_from_slice(&self.stream_id.to_be_bytes());
+        buf.header_mut()[42..50]
             .copy_from_slice(&current_timestamp_with_granularity().to_be_bytes());
-        buf.header_mut()[66..68].copy_from_slice(&(body_len as u16).to_be_bytes());
-        buf.header_mut()[68..70].copy_from_slice(&(payload_len as u16).to_be_bytes());
+        buf.header_mut()[50..52].copy_from_slice(&(body_len as u16).to_be_bytes());
+        buf.header_mut()[52..54].copy_from_slice(&(payload_len as u16).to_be_bytes());
         self.cipher.seal(&mut buf.header_mut()[INIT_SALT_LEN..]);
         self.cipher.seal(buf.body_mut());
         SessionKey::derive_from_shared_key(&self.shared_key, &salt)
@@ -247,15 +244,13 @@ impl FrameDecoder {
             return Err(BadDataReceived::FrameHeaderFailed.into());
         }
 
-        // buf[0..16] is the authentication tag.
-
         // Check whether the command field is valid.
-        let Ok(command) = Command::try_from(buf[16]) else {
+        let Ok(command) = Command::try_from(buf[0]) else {
             return Err(PeerMisbehaved::InvalidCommand { received: buf[0] }.into());
         };
 
         // Check the length of the frame body.
-        let body_len = u16::from_be_bytes(buf[17..19].try_into().unwrap()) as usize;
+        let body_len = u16::from_be_bytes(buf[1..3].try_into().unwrap()) as usize;
         if !(BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len) {
             return Err(PeerMisbehaved::FrameBodyLenInvalid {
                 received: body_len as u16,
@@ -264,7 +259,7 @@ impl FrameDecoder {
         }
 
         // Check the length of the frame payload (if any).
-        let payload_len = u16::from_be_bytes(buf[19..21].try_into().unwrap()) as usize;
+        let payload_len = u16::from_be_bytes(buf[3..5].try_into().unwrap()) as usize;
         if !(PAYLOAD_MIN_LEN..=body_len - TAG_LEN).contains(&payload_len) {
             return Err(PeerMisbehaved::PayloadLenInvalid {
                 received: payload_len as u16,
@@ -327,12 +322,12 @@ impl FrameEncoder {
     }
 
     pub(crate) fn seal(&mut self, command: Command, buf: &mut FrameBufMut) {
-        buf.pad();
+        buf.pad_and_reserve_tag();
         let body_len = buf.body_len();
         let payload_len = buf.payload_len();
-        buf.header_mut()[16] = command.into();
-        buf.header_mut()[17..19].copy_from_slice(&(body_len as u16).to_be_bytes());
-        buf.header_mut()[19..21].copy_from_slice(&(payload_len as u16).to_be_bytes());
+        buf.header_mut()[0] = command.into();
+        buf.header_mut()[1..3].copy_from_slice(&(body_len as u16).to_be_bytes());
+        buf.header_mut()[3..5].copy_from_slice(&(payload_len as u16).to_be_bytes());
         self.cipher.seal(buf.header_mut());
         self.cipher.seal(buf.body_mut());
     }
@@ -419,11 +414,11 @@ impl InitFrameBufMut {
         let random_len =
             StdRng::from_seed(random).random_range(INIT_PAYLOAD_MIN_LEN..=INIT_PAYLOAD_MAX_LEN);
         Self {
-            buf: vec![0u8; INIT_HDR_LEN + INIT_TAG_LEN],
-            payload_pos: INIT_HDR_LEN + INIT_TAG_LEN,
+            buf: vec![0u8; INIT_HDR_LEN],
+            payload_pos: INIT_HDR_LEN,
 
             // A predetermined random frame length,
-            capacity: INIT_HDR_LEN + INIT_TAG_LEN + random_len,
+            capacity: INIT_HDR_LEN + random_len + INIT_TAG_LEN,
         }
     }
 
@@ -444,11 +439,11 @@ impl InitFrameBufMut {
     }
 
     pub(crate) fn payload_len(&self) -> usize {
-        self.payload_pos - INIT_HDR_LEN - INIT_TAG_LEN
+        self.payload_pos - INIT_HDR_LEN
     }
 
     pub(crate) fn remaining(&self) -> usize {
-        self.capacity - self.payload_pos
+        self.capacity - self.payload_pos - INIT_TAG_LEN
     }
 
     pub(crate) fn push_payload(&mut self, payload: &[u8]) {
@@ -481,8 +476,8 @@ pub(crate) struct FrameBufMut {
 impl FrameBufMut {
     pub(crate) fn with_pad_option_and_rng(pad_option: PadOption, rng: StdRng) -> Self {
         Self {
-            buf: vec![0u8; HDR_LEN + TAG_LEN],
-            payload_pos: HDR_LEN + TAG_LEN,
+            buf: vec![0u8; HDR_LEN],
+            payload_pos: HDR_LEN,
             capacity: match pad_option {
                 PadOption::None => FRAME_MAX_LEN,
 
@@ -503,8 +498,8 @@ impl FrameBufMut {
 
     pub(crate) fn reset(&mut self) {
         self.buf.clear();
-        self.buf.resize(HDR_LEN + TAG_LEN, 0);
-        self.payload_pos = HDR_LEN + TAG_LEN;
+        self.buf.resize(HDR_LEN, 0);
+        self.payload_pos = HDR_LEN;
     }
 
     pub(crate) fn header_mut(&mut self) -> &mut [u8] {
@@ -516,15 +511,15 @@ impl FrameBufMut {
     }
 
     pub(crate) fn body_len(&self) -> usize {
-        self.buf[HDR_LEN..].len()
+        self.buf.len() - HDR_LEN
     }
 
     pub(crate) fn payload_len(&self) -> usize {
-        self.payload_pos - HDR_LEN - TAG_LEN
+        self.payload_pos - HDR_LEN
     }
 
     pub(crate) fn remaining(&self) -> usize {
-        self.capacity - self.payload_pos
+        self.capacity - self.payload_pos - TAG_LEN
     }
 
     pub(crate) fn push_payload(&mut self, payload: &[u8]) {
@@ -533,19 +528,28 @@ impl FrameBufMut {
         self.payload_pos += payload.len();
     }
 
-    pub(crate) fn pad(&mut self) {
+    pub(crate) fn pad_and_reserve_tag(&mut self) {
         match self.pad_option {
-            PadOption::None => (), // do nothing.
+            PadOption::None => {
+                // If no padding is required, we only need to reserve space for the tag.
+                let len = self.buf.len();
+                self.buf.resize(len + TAG_LEN, 0x00);
+            },
             PadOption::UniformTail { link_mpu } => {
                 debug_assert!(self.buf.len() <= self.capacity);
 
-                let frame_len = self.buf.len();
+                // Here we add a "virtual" tag length to the actual frame length.
+                let frame_len = self.buf.len() + TAG_LEN;  
+                
                 let last_packet_len = frame_len % link_mpu as usize;
 
                 // If the length of the last packet is 0, it means all previous
                 // packets have been full to the MPU, and no additional padding
                 // is needed.
                 if last_packet_len == 0 {
+                    // If no padding is required, we only need to reserve space for the tag.
+                    let len = self.buf.len();
+                    self.buf.resize(len + TAG_LEN, 0x00);
                     return;
                 }
 
@@ -563,7 +567,7 @@ impl FrameBufMut {
                 };
 
                 let len = self.buf.len();
-                self.buf.resize(len + pad_len, 0x00);
+                self.buf.resize(len + pad_len + TAG_LEN, 0x00);
             }
         }
     }
@@ -627,7 +631,7 @@ mod test {
             assert_eq!(payload_len, remaining);
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[INIT_TAG_LEN..INIT_TAG_LEN + payload_len]
+                &body[..payload_len]
             );
         }
     }
@@ -675,7 +679,7 @@ mod test {
             assert_eq!(payload_len, remaining);
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[INIT_TAG_LEN..INIT_TAG_LEN + payload_len]
+                &body[..payload_len]
             );
         }
     }
@@ -719,7 +723,7 @@ mod test {
             assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
             assert_eq!(
                 &dummy_payload[..remaining],
-                &body[TAG_LEN..TAG_LEN + payload_len]
+                &body[..payload_len]
             );
         }
     }
@@ -766,7 +770,7 @@ mod test {
                 assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
                 assert_eq!(
                     &dummy_payload[..remaining],
-                    &body[TAG_LEN..TAG_LEN + payload_len]
+                    &body[..payload_len]
                 );
             }
         }
@@ -802,7 +806,7 @@ mod test {
             assert!((PAYLOAD_MIN_LEN..=PAYLOAD_MAX_LEN).contains(&remaining));
 
             buf.push_payload(&dummy_payload[..remaining]);
-            buf.pad();
+            buf.pad_and_reserve_tag();
             let frame_len = buf.inner().len();
             assert!((FRAME_MIN_LEN..=FRAME_MAX_LEN).contains(&frame_len));
         }
@@ -824,7 +828,7 @@ mod test {
                 assert!((PAYLOAD_MIN_LEN..=PAYLOAD_MAX_LEN).contains(&remaining));
 
                 buf.push_payload(&dummy_payload[..remaining]);
-                buf.pad();
+                buf.pad_and_reserve_tag();
                 let frame_len = buf.inner().len();
                 assert!((FRAME_MIN_LEN..=FRAME_MAX_LEN).contains(&frame_len));
             }

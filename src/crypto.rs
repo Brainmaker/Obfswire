@@ -263,7 +263,7 @@ impl StatelessCipher {
     }
 
     pub(crate) fn open(&self, in_out: &mut [u8], nonce: [u8; 12]) -> Result<(), ()> {
-        let (tag, in_out) = in_out.split_at_mut(Self::TAG_BYTES);
+        let (in_out, tag) = in_out.split_at_mut(in_out.len() - Self::TAG_BYTES);
         self.key
             .open_in_place_separate_tag(
                 Nonce::assume_unique_for_key(nonce),
@@ -277,7 +277,7 @@ impl StatelessCipher {
     }
 
     pub(crate) fn seal(&self, in_out: &mut [u8], nonce: [u8; 12]) {
-        let (tag, in_out) = in_out.split_at_mut(Self::TAG_BYTES);
+        let (in_out, tag) = in_out.split_at_mut(in_out.len() - Self::TAG_BYTES);
         let t = self
             .key
             .seal_in_place_separate_tag(Nonce::assume_unique_for_key(nonce), Aad::empty(), in_out)
@@ -306,15 +306,15 @@ mod tests {
         let cipher =
             StatelessCipher::with_cipher_and_session_key(cipher, SessionKey::from([0u8; 32]));
         let plaintext = b"Hello, world!";
-        let mut buf = vec![0u8; StatelessCipher::TAG_BYTES];
-        buf.extend_from_slice(plaintext);
+        let mut buf = plaintext.to_vec();
+        buf.extend_from_slice(&[0u8; StatelessCipher::TAG_BYTES]);
 
         // seal
         cipher.seal(&mut buf, [0u8; 12]);
 
         // open
         assert_eq!(cipher.open(&mut buf, [0u8; 12]), Ok(()));
-        assert_eq!(&buf[StatelessCipher::TAG_BYTES..], plaintext);
+        assert_eq!(&buf[..buf.len() - StatelessCipher::TAG_BYTES], plaintext);
     }
 
     fn test_empty_data(cipher: CipherKind) {

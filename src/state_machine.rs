@@ -15,7 +15,7 @@ use crate::{
     error::{Error, Retryable},
     specification::{
         BODY_MAX_LEN, BODY_MIN_LEN, FRAME_MAX_LEN, HDR_LEN, INIT_BODY_MAX_LEN, INIT_BODY_MIN_LEN,
-        INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_HDR_LEN, INIT_TAG_LEN, TAG_LEN,
+        INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_HDR_LEN
     },
 };
 
@@ -489,13 +489,13 @@ impl BufRead for Reader<'_> {
         match self.0.read_state {
             ReadState::InitialPayloadReady => match self.0.init_receiver.state {
                 InitFrameReadState::PayloadReady { payload_len, .. } => {
-                    Ok(&self.0.init_receiver.buf[INIT_TAG_LEN..INIT_TAG_LEN + payload_len])
+                    Ok(&self.0.init_receiver.buf[..payload_len])
                 }
                 _ => Err(ErrorKind::WouldBlock.into()),
             },
             ReadState::PayloadReady => match self.0.receiver.state {
                 FrameReadState::PayloadReady { payload_len, .. } => {
-                    Ok(&self.0.receiver.buf[TAG_LEN..TAG_LEN + payload_len])
+                    Ok(&self.0.receiver.buf[..payload_len])
                 }
                 _ => Err(ErrorKind::WouldBlock.into()),
             },
