@@ -135,7 +135,6 @@ mod test {
     use std::{
         io::{self, ErrorKind, Read, Write},
     };
-    
 
     #[derive(Clone, Debug, Eq, PartialEq)]
     pub(crate) struct MockStream {
@@ -148,7 +147,7 @@ mod test {
             self.buf.clear();
             self.eof = true;
         }
-        
+
         pub(crate) fn clear(&mut self) {
             self.buf.clear();
             self.eof = false;

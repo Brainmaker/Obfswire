@@ -15,7 +15,7 @@ use crate::{
     error::{Error, Retryable},
     specification::{
         BODY_MAX_LEN, BODY_MIN_LEN, FRAME_MAX_LEN, HDR_LEN, INIT_BODY_MAX_LEN, INIT_BODY_MIN_LEN,
-        INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_HDR_LEN
+        INIT_FRAME_MAX_LEN, INIT_FRAME_MIN_LEN, INIT_HDR_LEN,
     },
 };
 
@@ -783,7 +783,7 @@ impl InitReceiver {
                             Err(Error::BadDataReceived(e).into())
                         }
                         Err(e) => Err(e.into()),
-                    }
+                    };
                 }
                 InitFrameReadState::PayloadReady { .. } => {
                     unreachable!("programming error: PayloadReady state should not be reached")
@@ -950,7 +950,7 @@ impl Receiver {
                             Err(Error::BadDataReceived(e).into())
                         }
                         Err(e) => Err(e.into()),
-                    }
+                    };
                 }
                 FrameReadState::PayloadReady { .. } => match self.key_state {
                     ReceiverKeyState::None => {

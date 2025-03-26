@@ -534,13 +534,13 @@ impl FrameBufMut {
                 // If no padding is required, we only need to reserve space for the tag.
                 let len = self.buf.len();
                 self.buf.resize(len + TAG_LEN, 0x00);
-            },
+            }
             PadOption::UniformTail { link_mpu } => {
                 debug_assert!(self.buf.len() <= self.capacity);
 
                 // Here we add a "virtual" tag length to the actual frame length.
-                let frame_len = self.buf.len() + TAG_LEN;  
-                
+                let frame_len = self.buf.len() + TAG_LEN;
+
                 let last_packet_len = frame_len % link_mpu as usize;
 
                 // If the length of the last packet is 0, it means all previous
@@ -629,10 +629,7 @@ mod test {
             assert_eq!(stream_id, encoder.stream_id);
             assert!((INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN).contains(&body_len));
             assert_eq!(payload_len, remaining);
-            assert_eq!(
-                &dummy_payload[..remaining],
-                &body[..payload_len]
-            );
+            assert_eq!(&dummy_payload[..remaining], &body[..payload_len]);
         }
     }
 
@@ -677,10 +674,7 @@ mod test {
             assert_eq!(stream_id, encoder.stream_id);
             assert!((INIT_BODY_MIN_LEN..=INIT_BODY_MAX_LEN).contains(&body_len));
             assert_eq!(payload_len, remaining);
-            assert_eq!(
-                &dummy_payload[..remaining],
-                &body[..payload_len]
-            );
+            assert_eq!(&dummy_payload[..remaining], &body[..payload_len]);
         }
     }
 
@@ -721,10 +715,7 @@ mod test {
             assert_eq!(Command::Payload, command);
             assert_eq!(payload_len, remaining);
             assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
-            assert_eq!(
-                &dummy_payload[..remaining],
-                &body[..payload_len]
-            );
+            assert_eq!(&dummy_payload[..remaining], &body[..payload_len]);
         }
     }
 
@@ -768,10 +759,7 @@ mod test {
                 assert_eq!(Command::Payload, command);
                 assert_eq!(payload_len, remaining);
                 assert!((BODY_MIN_LEN..=BODY_MAX_LEN).contains(&body_len));
-                assert_eq!(
-                    &dummy_payload[..remaining],
-                    &body[..payload_len]
-                );
+                assert_eq!(&dummy_payload[..remaining], &body[..payload_len]);
             }
         }
     }
