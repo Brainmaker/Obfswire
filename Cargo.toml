@@ -16,9 +16,9 @@ readme = "README.md"
 
 [dependencies]
 # Core dependencies
+aws-lc-rs = { version = "1.12", default-features = false, features = ["aws-lc-sys", "prebuilt-nasm"] }
 blake3 = "1"
 rand = { version = "0.9", default-features = false, features = ["os_rng", "std_rng"] }
-ring = { version = "0.17", default-features = false }
 zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
 
 # Optional feature `tokio-stream-impl` dependencies:

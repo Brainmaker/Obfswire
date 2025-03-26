@@ -5,11 +5,11 @@
 
 use core::fmt::{Debug, Formatter};
 
+use aws_lc_rs::aead::{
+    Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305,
+};
 use blake3::Hasher;
 use rand::{rngs::OsRng, TryRngCore};
-use ring::aead::{
-    Aad, LessSafeKey, Nonce, Tag, UnboundKey, AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305,
-};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Authenticated Encryption with Associated Data (AEAD) cipher used by the
@@ -263,15 +263,8 @@ impl StatelessCipher {
     }
 
     pub(crate) fn open(&self, in_out: &mut [u8], nonce: [u8; 12]) -> Result<(), ()> {
-        let (in_out, tag) = in_out.split_at_mut(in_out.len() - Self::TAG_BYTES);
         self.key
-            .open_in_place_separate_tag(
-                Nonce::assume_unique_for_key(nonce),
-                Aad::empty(),
-                Tag::from(<&[u8] as TryInto<[u8; 16]>>::try_into(tag).unwrap()),
-                in_out,
-                0..,
-            )
+            .open_in_place(Nonce::assume_unique_for_key(nonce), Aad::empty(), in_out)
             .map_err(|_| ())?;
         Ok(())
     }
